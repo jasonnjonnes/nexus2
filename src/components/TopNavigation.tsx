@@ -1,0 +1,143 @@
+import React, { useState } from 'react';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { 
+  LayoutDashboard, Calendar, Truck, GitBranch, FileText, 
+  DollarSign, Users, Search, Bell, Settings, User, ClipboardList, BookOpen
+} from 'lucide-react';
+import DarkModeToggle from './DarkModeToggle';
+import GlobalSearch from './GlobalSearch';
+
+interface TopNavigationProps {
+  toggleSidebar: () => void;
+  theme: string;
+  toggleTheme: () => void;
+}
+
+const TopNavigation: React.FC<TopNavigationProps> = ({ toggleSidebar, theme, toggleTheme }) => {
+  const navigate = useNavigate();
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  
+  const navLinkClasses = ({ isActive }) => 
+    `flex items-center px-3 py-4 text-sm font-medium transition-colors duration-150 ${
+      isActive 
+        ? 'text-blue-500 dark:text-blue-400 border-b-2 border-blue-500 dark:border-blue-400' 
+        : 'text-gray-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white'
+    }`;
+  
+  const mobileNavLinkClasses = ({ isActive }) => 
+    `flex flex-col items-center px-3 py-1 text-xs font-medium transition-colors duration-150 ${
+      isActive 
+        ? 'text-blue-500 dark:text-blue-400' 
+        : 'text-gray-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white'
+    }`;
+
+  return (
+    <>
+      <header className="bg-white dark:bg-black border-b border-gray-200 dark:border-gray-700 z-30 transition-colors duration-300">
+        {/* Top section: Logo, Search, Icons */}
+        <div className="px-4 sm:px-6 lg:px-8 py-3 border-b border-gray-200 dark:border-gray-700 flex flex-col md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <img 
+                src="/nexusfavicon.svg" 
+                alt="Nexus" 
+                className="h-8 w-auto transition-all duration-300 dark:brightness-0 dark:invert" 
+              />
+            </div>
+            {/* Mobile Icons */}
+            <div className="flex items-center gap-4 md:hidden">
+              <DarkModeToggle theme={theme} toggleTheme={toggleTheme} />
+              <button className="p-1 rounded-full text-gray-500 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white">
+                <Bell size={20} />
+              </button>
+              <button onClick={() => navigate('/settings')} className="p-1 rounded-full text-gray-500 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white">
+                <Settings size={20} />
+              </button>
+            </div>
+          </div>
+          
+          {/* Enhanced Search Bar */}
+          <div className="mt-3 md:mt-0 md:ml-4 relative max-w-md w-full mx-auto md:mx-0">
+            <div 
+              onClick={() => setIsSearchOpen(true)}
+              className="flex items-center border border-gray-300 dark:border-gray-700 rounded-md px-3 py-1.5 bg-gray-100 dark:bg-gray-800 w-full cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <Search size={16} className="text-gray-500 dark:text-gray-400 flex-shrink-0" />
+              <span className="ml-2 text-sm text-gray-500 dark:text-gray-400 w-full">
+                Search customers, jobs, invoices...
+              </span>
+              <kbd className="hidden sm:inline-flex items-center px-2 py-0.5 text-xs font-mono bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded text-gray-500 dark:text-gray-400">
+                ⌘K
+              </kbd>
+            </div>
+          </div>
+          
+          {/* Desktop Icons */}
+          <div className="hidden md:flex md:items-center md:gap-4">
+            <DarkModeToggle theme={theme} toggleTheme={toggleTheme} />
+            <button className="p-1 rounded-full text-gray-500 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white">
+              <Bell size={20} />
+            </button>
+            <button onClick={() => navigate('/settings')} className="p-1 rounded-full text-gray-500 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white">
+              <Settings size={20} />
+            </button>
+            <button className="flex rounded-full bg-gray-200 dark:bg-gray-700 text-sm">
+              <span className="h-8 w-8 rounded-full flex items-center justify-center text-slate-800 dark:text-white">
+                <User size={16} />
+              </span>
+            </button>
+          </div>
+        </div>
+        
+        {/* Desktop Navigation Links */}
+        <nav className="hidden md:flex justify-between px-4 sm:px-6 lg:px-8">
+          <NavLink to="/" className={navLinkClasses}><LayoutDashboard size={18} className="mr-2" />Dashboard</NavLink>
+          <NavLink to="/inbound" className={navLinkClasses}><ClipboardList size={18} className="mr-2" />Inbound</NavLink>
+          <NavLink to="/schedule" className={navLinkClasses}><Calendar size={18} className="mr-2" />Schedule</NavLink>
+          <NavLink to="/dispatch" className={navLinkClasses}><Truck size={18} className="mr-2" />Dispatch</NavLink>
+          <NavLink to="/pricebook" className={navLinkClasses}><BookOpen size={18} className="mr-2" />Pricebook</NavLink>
+          <NavLink to="/automations" className={navLinkClasses}><GitBranch size={18} className="mr-2" />Automations</NavLink>
+          <NavLink to="/accounting" className={navLinkClasses}><FileText size={18} className="mr-2" />Accounting</NavLink>
+          <NavLink to="/payroll" className={navLinkClasses}><DollarSign size={18} className="mr-2" />Payroll</NavLink>
+          <NavLink to="/customers" className={navLinkClasses}><Users size={18} className="mr-2" />Customers</NavLink>
+        </nav>
+        
+        {/* Mobile Navigation Links */}
+        <div className="md:hidden border-t border-gray-200 dark:border-gray-700">
+          <div className="grid grid-cols-7 gap-1 py-2 px-4">
+            <NavLink to="/" className={mobileNavLinkClasses}><LayoutDashboard size={18} className="mb-1" />Dashboard</NavLink>
+            <NavLink to="/inbound" className={mobileNavLinkClasses}><ClipboardList size={18} className="mb-1" />Inbound</NavLink>
+            <NavLink to="/schedule" className={mobileNavLinkClasses}><Calendar size={18} className="mb-1" />Schedule</NavLink>
+            <NavLink to="/dispatch" className={mobileNavLinkClasses}><Truck size={18} className="mb-1" />Dispatch</NavLink>
+            <NavLink to="/pricebook" className={mobileNavLinkClasses}><BookOpen size={18} className="mb-1" />Pricebook</NavLink>
+            <NavLink to="/automations" className={mobileNavLinkClasses}><GitBranch size={18} className="mb-1" />Auto</NavLink>
+            <NavLink to="/accounting" className={mobileNavLinkClasses}><FileText size={18} className="mb-1" />Account</NavLink>
+          </div>
+        </div>
+      </header>
+
+      {/* Global Search Modal */}
+      <GlobalSearch 
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+      />
+
+      {/* Keyboard shortcut handler */}
+      <div
+        className="fixed inset-0 pointer-events-none"
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+            e.preventDefault();
+            setIsSearchOpen(true);
+          }
+          if (e.key === 'Escape' && isSearchOpen) {
+            setIsSearchOpen(false);
+          }
+        }}
+        tabIndex={-1}
+      />
+    </>
+  );
+};
+
+export default TopNavigation;
