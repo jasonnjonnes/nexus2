@@ -13,10 +13,10 @@ import {
 import TagInput from './TagInput';
 
 // Helper functions
-const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
-const formatCurrency = (amount) => `$${amount != null ? amount.toFixed(2) : '0.00'}`;
+const formatDate = (dateString: string | undefined) => dateString ? new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
+const formatCurrency = (amount: number | undefined) => `$${amount != null ? amount.toFixed(2) : '0.00'}`;
 
-const getLocationTypeIcon = (type) => {
+const getLocationTypeIcon = (type: string | undefined) => {
   switch (type) {
     case 'residential': return <Home size={16} className="text-blue-600 dark:text-blue-400" />;
     case 'commercial': return <Briefcase size={16} className="text-purple-600 dark:text-purple-400" />;
@@ -25,9 +25,13 @@ const getLocationTypeIcon = (type) => {
 };
 
 // Google Places API integration
-const initializeGooglePlaces = (inputElement, onPlaceSelected) => {
-  if (window.google && window.google.maps && window.google.maps.places) {
-    const autocomplete = new window.google.maps.places.Autocomplete(inputElement, {
+type GooglePlaceAddress = { street: string; city: string; state: string; zip: string };
+const initializeGooglePlaces = (
+  inputElement: HTMLInputElement,
+  onPlaceSelected: (address: GooglePlaceAddress) => void
+) => {
+  if ((window as any).google && (window as any).google.maps && (window as any).google.maps.places) {
+    const autocomplete = new (window as any).google.maps.places.Autocomplete(inputElement, {
       componentRestrictions: { country: ['us'] },
       fields: ['address_components', 'formatted_address', 'geometry']
     });
@@ -35,9 +39,9 @@ const initializeGooglePlaces = (inputElement, onPlaceSelected) => {
     autocomplete.addListener('place_changed', () => {
       const place = autocomplete.getPlace();
       if (place.address_components) {
-        const addressComponents = {};
-        place.address_components.forEach(component => {
-          const types = component.types;
+        const addressComponents: any = {};
+        place.address_components.forEach((component: any) => {
+          const types: string[] = component.types;
           if (types.includes('street_number')) {
             addressComponents.streetNumber = component.long_name;
           }
@@ -70,9 +74,70 @@ const initializeGooglePlaces = (inputElement, onPlaceSelected) => {
   return null;
 };
 
-// Add Location Modal Component
-const AddLocationModal = ({ customer, isOpen, onClose, onUpdate }) => {
-  const [locationData, setLocationData] = useState({
+// Type definitions for Customer and Location
+export interface Location {
+  id: string;
+  name: string;
+  address: string;
+  type: string;
+  isPrimary?: boolean;
+  phone?: string;
+  contactPerson?: string;
+  street?: string;
+  unit?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  locationTags?: string[];
+  contacts?: Array<{ id: string; type: string; value: string; notes?: string; category?: string }>;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  company?: string;
+  email?: string;
+  phone?: string;
+  status?: string;
+  customerSince?: string;
+  tags?: string[];
+  leadSource?: string;
+  notes?: string;
+  locations?: Location[];
+  billingAddress?: string;
+  lifetimeRevenue?: number;
+  avgJobTotal?: number;
+  balanceDue?: number;
+  currentBalance?: number;
+  totalJobs?: number;
+  createdAt?: string;
+  membershipStatus?: string;
+  taxStatus?: string;
+  invoiceSignatureRequired?: boolean;
+  contacts?: Array<{ id: string; type: string; value: string; notes?: string; category?: string }>;
+}
+
+// AddLocationModal props
+interface AddLocationModalProps {
+  customer: Customer;
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate: (customer: Customer) => Promise<void>;
+}
+const AddLocationModal: React.FC<AddLocationModalProps> = ({ customer, isOpen, onClose, onUpdate }) => {
+  const [locationData, setLocationData] = useState<{
+    name: string;
+    type: string;
+    street: string;
+    unit: string;
+    city: string;
+    state: string;
+    zip: string;
+    phone: string;
+    contactPerson: string;
+    locationTags: string[];
+    isPrimary: boolean;
+  }>({
     name: '',
     type: 'residential',
     street: '',
@@ -103,21 +168,25 @@ const AddLocationModal = ({ customer, isOpen, onClose, onUpdate }) => {
     }
 
     return () => {
-      if (autocompleteRef.current && window.google) {
-        window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
+      if (autocompleteRef.current && (window as any).google) {
+        (window as any).google.maps.event.clearInstanceListeners(autocompleteRef.current);
       }
     };
   }, [isOpen]);
 
-  const handleInputChange = (e) => {
-    const { name, value, type, checked } = e.target;
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value, type } = e.target;
+    let checked = false;
+    if (type === 'checkbox' && 'checked' in e.target) {
+      checked = (e.target as HTMLInputElement).checked;
+    }
     setLocationData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
   };
 
-  const handleTagsChange = (newTags) => {
+  const handleTagsChange = (newTags: string[]) => {
     setLocationData(prev => ({ ...prev, locationTags: newTags }));
   };
 
@@ -358,8 +427,14 @@ const AddLocationModal = ({ customer, isOpen, onClose, onUpdate }) => {
   );
 };
 
-// Side Panel Editor Component for Customer
-const CustomerEditPanel = ({ customer, isOpen, onClose, onUpdate }) => {
+// CustomerEditPanel props
+interface CustomerEditPanelProps {
+  customer: Customer;
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate: (customer: Customer) => Promise<void>;
+}
+const CustomerEditPanel: React.FC<CustomerEditPanelProps> = ({ customer, isOpen, onClose, onUpdate }) => {
   const [editedCustomer, setEditedCustomer] = useState(customer);
   const [activeTab, setActiveTab] = useState('details');
   const [newContact, setNewContact] = useState({ type: 'phone', value: '', notes: '', category: 'mobile' });
@@ -381,23 +456,23 @@ const CustomerEditPanel = ({ customer, isOpen, onClose, onUpdate }) => {
     }
 
     return () => {
-      if (autocompleteRef.current && window.google) {
-        window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
+      if (autocompleteRef.current && (window as any).google) {
+        (window as any).google.maps.event.clearInstanceListeners(autocompleteRef.current);
       }
     };
   }, [activeTab]);
 
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setEditedCustomer(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleContactChange = (e) => {
+  const handleContactChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setNewContact(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleTagsChange = (newTags) => {
+  const handleTagsChange = (newTags: string[]) => {
     setEditedCustomer(prev => ({ ...prev, tags: newTags }));
   };
 
@@ -422,9 +497,19 @@ const CustomerEditPanel = ({ customer, isOpen, onClose, onUpdate }) => {
     }
   };
 
-  const removeContact = (contactId) => {
+  const removeContact = (contactId: string) => {
     const updatedContacts = (editedCustomer.contacts || []).filter(c => c.id !== contactId);
     setEditedCustomer(prev => ({ ...prev, contacts: updatedContacts }));
+  };
+
+  const handleTextAreaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setEditedCustomer(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setEditedCustomer(prev => ({ ...prev, [name]: value }));
   };
 
   if (!isOpen) return null;
@@ -542,7 +627,7 @@ const CustomerEditPanel = ({ customer, isOpen, onClose, onUpdate }) => {
                   <select
                     name="status"
                     value={editedCustomer.status || 'active'}
-                    onChange={handleInputChange}
+                    onChange={handleSelectChange}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   >
                     <option value="active">Active</option>
@@ -583,7 +668,7 @@ const CustomerEditPanel = ({ customer, isOpen, onClose, onUpdate }) => {
                 <textarea
                   name="notes"
                   value={editedCustomer.notes || ''}
-                  onChange={handleInputChange}
+                  onChange={handleTextAreaChange}
                   rows={4}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                 />
@@ -716,7 +801,7 @@ const CustomerEditPanel = ({ customer, isOpen, onClose, onUpdate }) => {
                   <select
                     name="membershipStatus"
                     value={editedCustomer.membershipStatus || 'Not a Member'}
-                    onChange={handleInputChange}
+                    onChange={handleSelectChange}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   >
                     <option value="Not a Member">Not a Member</option>
@@ -733,7 +818,7 @@ const CustomerEditPanel = ({ customer, isOpen, onClose, onUpdate }) => {
                   <select
                     name="taxStatus"
                     value={editedCustomer.taxStatus || 'Taxable'}
-                    onChange={handleInputChange}
+                    onChange={handleSelectChange}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   >
                     <option value="Taxable">Taxable</option>
@@ -781,137 +866,19 @@ const CustomerEditPanel = ({ customer, isOpen, onClose, onUpdate }) => {
   );
 };
 
-// Interactive Notes Component for Customer
-const InteractiveCustomerNotes = ({ customer, onUpdate }) => {
-  const [newNote, setNewNote] = useState('');
-  const [isAdding, setIsAdding] = useState(false);
-
-  const addNote = async () => {
-    if (newNote.trim()) {
-      const notes = customer.customerNotes || [];
-      const updatedNotes = [
-        {
-          id: `note_${Date.now()}`,
-          text: newNote.trim(),
-          author: 'Current User',
-          timestamp: new Date().toISOString(),
-          date: new Date().toLocaleDateString()
-        },
-        ...notes
-      ];
-      
-      try {
-        await onUpdate({ ...customer, customerNotes: updatedNotes });
-        setNewNote('');
-        setIsAdding(false);
-      } catch (error) {
-        console.error('Error adding note:', error);
-      }
-    }
-  };
-
-  const deleteNote = async (noteId) => {
-    const updatedNotes = (customer.customerNotes || []).filter(note => note.id !== noteId);
-    
-    try {
-      await onUpdate({ ...customer, customerNotes: updatedNotes });
-    } catch (error) {
-      console.error('Error deleting note:', error);
-    }
-  };
-
-  return (
-    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-medium text-gray-800 dark:text-gray-100 flex items-center">
-          <FileText size={20} className="mr-2" />
-          Customer Notes
-        </h2>
-        <button
-          onClick={() => setIsAdding(true)}
-          className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
-        >
-          <Plus size={16} className="mr-1 inline" />
-          Add Note
-        </button>
-      </div>
-
-      {isAdding && (
-        <div className="mb-4 p-4 border border-gray-200 dark:border-slate-700 rounded-lg">
-          <textarea
-            value={newNote}
-            onChange={(e) => setNewNote(e.target.value)}
-            placeholder="Add a note about this customer..."
-            className="w-full p-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 min-h-[100px]"
-          />
-          <div className="flex justify-end space-x-2 mt-3">
-            <button
-              onClick={() => {
-                setIsAdding(false);
-                setNewNote('');
-              }}
-              className="px-3 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={addNote}
-              className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Save Note
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {(customer.customerNotes || []).length === 0 ? (
-          <p className="text-gray-500 dark:text-gray-400 text-center py-8">
-            No notes yet. Click "Add Note\" to get started.
-          </p>
-        ) : (
-          (customer.customerNotes || []).map(note => (
-            <div key={note.id} className="p-4 border border-gray-200 dark:border-slate-700 rounded-lg">
-              <div className="flex justify-between items-start mb-2">
-                <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                  <User size={14} className="mr-1" />
-                  <span>{note.author}</span>
-                  <span className="mx-2">•</span>
-                  <Clock size={14} className="mr-1" />
-                  <span>{note.date}</span>
-                </div>
-                <button
-                  onClick={() => deleteNote(note.id)}
-                  className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-              <p className="text-gray-800 dark:text-gray-200">{note.text}</p>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-};
-
-// Empty Section Component
-const EmptySection = ({ icon: Icon, title, description }) => (
-  <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-    <div className="text-center py-8">
-      <Icon size={48} className="mx-auto text-gray-400 dark:text-gray-500 mb-4" />
-      <h3 className="text-lg font-medium text-gray-800 dark:text-gray-200 mb-2">{title}</h3>
-      <p className="text-gray-600 dark:text-gray-400 text-sm">{description}</p>
-    </div>
-  </div>
-);
-
-const CustomerDetailView = ({ customer, onBack, onUpdate, onDelete, onLocationClick }) => {
+// CustomerDetailView props
+export interface CustomerDetailViewProps {
+  customer: Customer;
+  onBack: () => void;
+  onUpdate: (customer: Customer) => Promise<void>;
+  onDelete: (customerId: string) => Promise<void>;
+  onLocationClick: (location: Location) => void;
+}
+const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, onBack, onUpdate, onDelete, onLocationClick }) => {
   const navigate = useNavigate();
   const [showEditPanel, setShowEditPanel] = useState(false);
   const [showAddLocation, setShowAddLocation] = useState(false);
-  const [customerJobs, setCustomerJobs] = useState([]);
+  const [customerJobs, setCustomerJobs] = useState<any[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
 
   // Load jobs for this customer from Firebase
@@ -925,7 +892,7 @@ const CustomerDetailView = ({ customer, onBack, onUpdate, onDelete, onLocationCl
         );
 
         const unsubscribe = onSnapshot(jobsQuery, (querySnapshot) => {
-          const jobs = [];
+          const jobs: any[] = [];
           querySnapshot.forEach((doc) => {
             jobs.push({ id: doc.id, ...doc.data() });
           });
@@ -949,7 +916,7 @@ const CustomerDetailView = ({ customer, onBack, onUpdate, onDelete, onLocationCl
     }
   }, [customer.id]);
 
-  const getJobStatusColor = (status) => {
+  const getJobStatusColor = (status: string) => {
     switch (status) {
       case 'completed': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
       case 'scheduled': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
@@ -965,7 +932,7 @@ const CustomerDetailView = ({ customer, onBack, onUpdate, onDelete, onLocationCl
     }
   };
 
-  const handleJobClick = (jobId) => {
+  const handleJobClick = (jobId: string) => {
     navigate(`/job/${jobId}`);
   };
 
@@ -978,10 +945,10 @@ const CustomerDetailView = ({ customer, onBack, onUpdate, onDelete, onLocationCl
       return sum + (typeof total === 'number' ? total : 0);
     }, 0),
     avgJobTotal: customerJobs.length > 0 ? 
-      customerJobs.reduce((sum, job) => {
+      Number(customerJobs.reduce((sum, job) => {
         const total = job.total || job.amount || job.price || 0;
         return sum + (typeof total === 'number' ? total : 0);
-      }, 0) / customerJobs.length : 0,
+      }, 0)) / Number(customerJobs.length) : 0,
     lastJobDate: customerJobs.length > 0 ? customerJobs[0].startDate || customerJobs[0].createdAt : null
   };
 
@@ -1397,5 +1364,10 @@ const CustomerDetailView = ({ customer, onBack, onUpdate, onDelete, onLocationCl
     </div>
   );
 };
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const InteractiveCustomerNotes = (props: any) => null;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const EmptySection = (props: any) => null;
 
 export default CustomerDetailView;

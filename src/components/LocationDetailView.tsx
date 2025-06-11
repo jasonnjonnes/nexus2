@@ -1,22 +1,77 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  ArrowLeft, Edit, Save, X, MapPin, Phone, Mail, 
-  Building, Home, Briefcase, FileText, Trash2, Plus,
-  Calendar, DollarSign, User, Clock, Check, Star, Search,
-  Users, Zap, MessageSquare, Camera, Paperclip, Award,
-  ClipboardList, TrendingUp, PhoneCall
-} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  getFirestore, collection, query, where, onSnapshot
-} from "firebase/firestore";
+  MapPin, Home, Briefcase, Phone, Mail, User, Building, 
+  Edit2, Trash2, Plus, DollarSign, Users, TrendingUp, 
+  PhoneCall, Award, ClipboardList, FileText, LucideIcon,
+  X, Search, ArrowLeft, Calendar, Camera, Paperclip,
+  Check, Clock
+} from 'lucide-react';
+import { 
+  getFirestore, collection, query, where, onSnapshot 
+} from 'firebase/firestore';
 import TagInput from './TagInput';
 
-// Helper functions
-const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
-const formatCurrency = (amount) => `$${amount != null ? amount.toFixed(2) : '0.00'}`;
+// Add type declarations for Google Maps
+declare global {
+  namespace google {
+    namespace maps {
+      namespace places {
+        class Autocomplete {
+          constructor(
+            input: HTMLInputElement,
+            options?: {
+              types?: string[];
+              componentRestrictions?: { country: string };
+            }
+          );
+          addListener(event: string, callback: () => void): void;
+          getPlace(): {
+            address_components?: Array<{
+              long_name: string;
+              short_name: string;
+              types: string[];
+            }>;
+          };
+        }
+      }
+      namespace event {
+        function clearInstanceListeners(instance: any): void;
+      }
+    }
+  }
+}
 
-const getLocationTypeIcon = (type) => {
+// Add Job type definition
+interface Job {
+  id: string;
+  customerId: string;
+  locationId: string;
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+  total: number;
+  date: string;
+  description: string;
+  technician?: string;
+  notes?: string;
+}
+
+// Utility functions with proper types
+const formatDate = (dateString: string): string => {
+  return new Date(dateString).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  });
+};
+
+const formatCurrency = (amount: number): string => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD'
+  }).format(amount);
+};
+
+const getLocationTypeIcon = (type: string): JSX.Element => {
   switch (type) {
     case 'residential': return <Home size={16} className="text-blue-600 dark:text-blue-400" />;
     case 'commercial': return <Briefcase size={16} className="text-purple-600 dark:text-purple-400" />;
@@ -25,58 +80,148 @@ const getLocationTypeIcon = (type) => {
 };
 
 // Google Places API integration
-const initializeGooglePlaces = (inputElement, onPlaceSelected) => {
-  if (window.google && window.google.maps && window.google.maps.places) {
-    const autocomplete = new window.google.maps.places.Autocomplete(inputElement, {
-      componentRestrictions: { country: ['us'] },
-      fields: ['address_components', 'formatted_address', 'geometry']
-    });
+type GooglePlaceAddress = { 
+  street: string; 
+  city: string; 
+  state: string; 
+  zip: string 
+};
 
-    autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      if (place.address_components) {
-        const addressComponents = {};
-        place.address_components.forEach(component => {
-          const types = component.types;
-          if (types.includes('street_number')) {
-            addressComponents.streetNumber = component.long_name;
-          }
-          if (types.includes('route')) {
-            addressComponents.route = component.long_name;
-          }
-          if (types.includes('locality')) {
-            addressComponents.city = component.long_name;
-          }
-          if (types.includes('administrative_area_level_1')) {
-            addressComponents.state = component.short_name;
-          }
-          if (types.includes('postal_code')) {
-            addressComponents.zip = component.long_name;
-          }
-        });
+interface AddressComponent {
+  long_name: string;
+  short_name: string;
+  types: string[];
+}
 
-        const street = [addressComponents.streetNumber, addressComponents.route].filter(Boolean).join(' ');
-        onPlaceSelected({
-          street,
-          city: addressComponents.city || '',
-          state: addressComponents.state || '',
-          zip: addressComponents.zip || ''
-        });
+interface Place {
+  address_components?: AddressComponent[];
+}
+
+const initializeGooglePlaces = (
+  inputElement: HTMLInputElement,
+  onPlaceSelected: (addressData: GooglePlaceAddress) => void
+) => {
+  if (!window.google?.maps?.places) {
+    throw new Error('Google Maps Places API not loaded');
+  }
+
+  const autocomplete = new window.google.maps.places.Autocomplete(inputElement, {
+    types: ['address'],
+    componentRestrictions: { country: 'us' }
+  });
+
+  autocomplete.addListener('place_changed', () => {
+    const place = autocomplete.getPlace();
+    if (!place.address_components) return;
+
+    const addressData: GooglePlaceAddress = {
+      street: '',
+      city: '',
+      state: '',
+      zip: ''
+    };
+
+    place.address_components.forEach(component => {
+      const type = component.types[0];
+      switch (type) {
+        case 'street_number':
+          addressData.street = component.long_name;
+          break;
+        case 'route':
+          addressData.street += ' ' + component.long_name;
+          break;
+        case 'locality':
+          addressData.city = component.long_name;
+          break;
+        case 'administrative_area_level_1':
+          addressData.state = component.short_name;
+          break;
+        case 'postal_code':
+          addressData.zip = component.long_name;
+          break;
       }
     });
 
-    return autocomplete;
-  }
-  return null;
+    onPlaceSelected(addressData);
+  });
+
+  return autocomplete;
 };
 
-// Side Panel Editor Component for Location
-const LocationEditPanel = ({ location, customer, isOpen, onClose, onUpdate }) => {
-  const [editedLocation, setEditedLocation] = useState(location);
-  const [activeTab, setActiveTab] = useState('details');
-  const [newContact, setNewContact] = useState({ type: 'phone', value: '', notes: '', category: 'mobile' });
-  const streetInputRef = useRef(null);
-  const autocompleteRef = useRef(null);
+// Type definitions for Customer and Location
+export interface Location {
+  id: string;
+  name: string;
+  address: string;
+  type: string;
+  isPrimary?: boolean;
+  phone?: string;
+  contactPerson?: string;
+  street?: string;
+  unit?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  locationTags?: string[];
+  contacts?: Array<{ id: string; type: string; value: string; notes?: string; category?: string }>;
+  notes?: Note[];
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  company?: string;
+  email?: string;
+  phone?: string;
+  status?: string;
+  customerSince?: string;
+  tags?: string[];
+  leadSource?: string;
+  notes?: string;
+  locations?: Location[];
+  billingAddress?: string;
+  lifetimeRevenue?: number;
+  avgJobTotal?: number;
+  balanceDue?: number;
+  currentBalance?: number;
+  totalJobs?: number;
+  createdAt?: string;
+  membershipStatus?: string;
+  taxStatus?: string;
+  invoiceSignatureRequired?: boolean;
+  contacts?: Array<{ id: string; type: string; value: string; notes?: string; category?: string }>;
+}
+
+// LocationEditPanel props
+interface LocationEditPanelProps {
+  location: Location;
+  customer: Customer;
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate: (customer: Customer) => Promise<void>;
+}
+
+interface Contact {
+  id: string;
+  type: string;
+  value: string;
+  notes?: string;
+  category?: string;
+}
+
+interface NewContact {
+  type: string;
+  value: string;
+  notes: string;
+  category: string;
+}
+
+const LocationEditPanel: React.FC<LocationEditPanelProps> = ({ location, customer, isOpen, onClose, onUpdate }) => {
+  const [editedLocation, setEditedLocation] = useState<Location>(location);
+  const [activeTab, setActiveTab] = useState<string>('details');
+  const [newContact, setNewContact] = useState<NewContact>({ type: 'phone', value: '', notes: '', category: 'mobile' });
+  const streetInputRef = useRef<HTMLInputElement>(null);
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   useEffect(() => {
     setEditedLocation(location);
@@ -102,31 +247,40 @@ const LocationEditPanel = ({ location, customer, isOpen, onClose, onUpdate }) =>
     };
   }, [activeTab]);
 
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setEditedLocation(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleContactChange = (e) => {
+  const handleContactChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setNewContact(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleLocationTagsChange = (newTags) => {
+  const handleLocationTagsChange = (newTags: string[]) => {
     setEditedLocation(prev => ({ ...prev, locationTags: newTags }));
   };
 
   const handleSave = async () => {
     try {
-      // Update the location in the customer's locations array
-      const updatedCustomer = {
+      if (!customer.locations) return;
+      
+      const updatedCustomer: Customer = {
         ...customer,
-        locations: customer.locations.map(loc => 
-          loc.id === editedLocation.id ? {
+        locations: customer.locations.map((loc: Location) => {
+          if (loc.id !== editedLocation.id) return loc;
+          
+          // Convert legacy notes to new format if needed
+          const updatedNotes = editedLocation.notes?.map(note => 
+            isLegacyNote(note) ? convertLegacyNote(note) : note
+          );
+          
+          return {
             ...editedLocation,
+            notes: updatedNotes,
             address: [editedLocation.street, editedLocation.city, editedLocation.state, editedLocation.zip].filter(Boolean).join(', ')
-          } : loc
-        )
+          };
+        })
       };
       await onUpdate(updatedCustomer);
       onClose();
@@ -138,7 +292,7 @@ const LocationEditPanel = ({ location, customer, isOpen, onClose, onUpdate }) =>
   const addContact = () => {
     if (newContact.value.trim()) {
       const contacts = editedLocation.contacts || [];
-      const updatedContacts = [...contacts, { 
+      const updatedContacts: Contact[] = [...contacts, { 
         id: `contact_${Date.now()}`, 
         ...newContact 
       }];
@@ -147,7 +301,7 @@ const LocationEditPanel = ({ location, customer, isOpen, onClose, onUpdate }) =>
     }
   };
 
-  const removeContact = (contactId) => {
+  const removeContact = (contactId: string) => {
     const updatedContacts = (editedLocation.contacts || []).filter(c => c.id !== contactId);
     setEditedLocation(prev => ({ ...prev, contacts: updatedContacts }));
   };
@@ -480,54 +634,107 @@ const LocationEditPanel = ({ location, customer, isOpen, onClose, onUpdate }) =>
   );
 };
 
-// Interactive Notes Component for Location
-const InteractiveLocationNotes = ({ location, customer, onUpdate }) => {
+interface LegacyNote {
+  id: string;
+  text: string;
+  author: string;
+  timestamp: string;
+  date: string;
+}
+
+interface LocationNote {
+  id: string;
+  content: string;
+  createdAt: string;
+  createdBy: string;
+}
+
+type Note = LocationNote | LegacyNote;
+
+const isLegacyNote = (note: Note): note is LegacyNote => {
+  return (
+    typeof note === 'object' &&
+    note !== null &&
+    'text' in note &&
+    'author' in note &&
+    'timestamp' in note &&
+    'date' in note &&
+    typeof note.text === 'string' &&
+    typeof note.author === 'string' &&
+    typeof note.timestamp === 'string' &&
+    typeof note.date === 'string'
+  );
+};
+
+const convertLegacyNote = (note: LegacyNote): LocationNote => ({
+  id: note.id,
+  content: note.text,
+  createdAt: note.timestamp,
+  createdBy: note.author
+});
+
+const getNoteContent = (note: Note): string => {
+  return isLegacyNote(note) ? note.text : note.content;
+};
+
+const getNoteAuthor = (note: Note): string => {
+  return isLegacyNote(note) ? note.author : note.createdBy;
+};
+
+const getNoteDate = (note: Note): string => {
+  return isLegacyNote(note) ? note.date : note.createdAt;
+};
+
+interface InteractiveLocationNotesProps {
+  location: Location;
+  customer: Customer;
+  onUpdate: (customer: Customer) => Promise<void>;
+}
+
+const InteractiveLocationNotes: React.FC<InteractiveLocationNotesProps> = ({ location, customer, onUpdate }) => {
   const [newNote, setNewNote] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
   const addNote = async () => {
-    if (newNote.trim()) {
-      const notes = location.notes || [];
-      const updatedNotes = [
-        {
-          id: `note_${Date.now()}`,
-          text: newNote.trim(),
-          author: 'Current User',
-          timestamp: new Date().toISOString(),
-          date: new Date().toLocaleDateString()
-        },
-        ...notes
-      ];
-      
-      // Update the location in the customer's locations array
-      const updatedCustomer = {
-        ...customer,
-        locations: customer.locations.map(loc => 
-          loc.id === location.id ? { ...loc, notes: updatedNotes } : loc
-        )
-      };
-      
-      try {
-        await onUpdate(updatedCustomer);
-        setNewNote('');
-        setIsAdding(false);
-      } catch (error) {
-        console.error('Error adding note:', error);
-      }
+    if (!newNote.trim() || !customer.locations) return;
+
+    const note: LocationNote = {
+      id: `note_${Date.now()}`,
+      content: newNote.trim(),
+      createdAt: new Date().toISOString(),
+      createdBy: 'Current User' // TODO: Get actual user
+    };
+
+    const updatedCustomer: Customer = {
+      ...customer,
+      locations: customer.locations.map(loc => 
+        loc.id === location.id
+          ? { ...loc, notes: [...(loc.notes || []), note] }
+          : loc
+      )
+    };
+
+    try {
+      await onUpdate(updatedCustomer);
+      setNewNote('');
+      setIsAdding(false);
+    } catch (error) {
+      console.error('Error adding note:', error);
     }
   };
 
-  const deleteNote = async (noteId) => {
-    const updatedNotes = (location.notes || []).filter(note => note.id !== noteId);
-    
-    // Update the location in the customer's locations array
-    const updatedCustomer = {
+  const deleteNote = async (noteId: string) => {
+    if (!customer.locations) return;
+
+    const updatedCustomer: Customer = {
       ...customer,
       locations: customer.locations.map(loc => 
-        loc.id === location.id ? { ...loc, notes: updatedNotes } : loc
+        loc.id === location.id
+          ? { ...loc, notes: (loc.notes || []).filter(note => note.id !== noteId) }
+          : loc
       )
     };
-    
+
     try {
       await onUpdate(updatedCustomer);
     } catch (error) {
@@ -538,10 +745,7 @@ const InteractiveLocationNotes = ({ location, customer, onUpdate }) => {
   return (
     <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-medium text-gray-800 dark:text-gray-100 flex items-center">
-          <FileText size={20} className="mr-2" />
-          Location Notes
-        </h2>
+        <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100">Location Notes</h3>
         <button
           onClick={() => setIsAdding(true)}
           className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
@@ -552,26 +756,27 @@ const InteractiveLocationNotes = ({ location, customer, onUpdate }) => {
       </div>
 
       {isAdding && (
-        <div className="mb-4 p-4 border border-gray-200 dark:border-slate-700 rounded-lg">
+        <div className="mb-4">
           <textarea
             value={newNote}
             onChange={(e) => setNewNote(e.target.value)}
-            placeholder="Add a note about this location..."
-            className="w-full p-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 min-h-[100px]"
+            placeholder="Type your note here..."
+            className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
+            rows={3}
           />
-          <div className="flex justify-end space-x-2 mt-3">
+          <div className="flex justify-end space-x-2 mt-2">
             <button
               onClick={() => {
-                setIsAdding(false);
                 setNewNote('');
+                setIsAdding(false);
               }}
-              className="px-3 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+              className="px-3 py-1 border border-gray-300 dark:border-slate-600 rounded-lg text-sm hover:bg-gray-100 dark:hover:bg-slate-700"
             >
               Cancel
             </button>
             <button
               onClick={addNote}
-              className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+              className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
             >
               Save Note
             </button>
@@ -580,122 +785,128 @@ const InteractiveLocationNotes = ({ location, customer, onUpdate }) => {
       )}
 
       <div className="space-y-3">
-        {(location.notes || []).length === 0 ? (
-          <p className="text-gray-500 dark:text-gray-400 text-center py-8">
-            No notes yet. Click "Add Note\" to get started.
-          </p>
-        ) : (
-          (location.notes || []).map(note => (
-            <div key={note.id} className="p-4 border border-gray-200 dark:border-slate-700 rounded-lg">
-              <div className="flex justify-between items-start mb-2">
-                <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                  <User size={14} className="mr-1" />
-                  <span>{note.author}</span>
+        {(location.notes || []).map(note => (
+          <div key={note.id} className="p-4 border border-gray-200 dark:border-slate-700 rounded-lg">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <p className="text-gray-800 dark:text-gray-200">{getNoteContent(note)}</p>
+                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  <span>{getNoteAuthor(note)}</span>
                   <span className="mx-2">•</span>
-                  <Clock size={14} className="mr-1" />
-                  <span>{note.date}</span>
+                  <span>{formatDate(getNoteDate(note))}</span>
                 </div>
-                <button
-                  onClick={() => deleteNote(note.id)}
-                  className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                >
-                  <Trash2 size={14} />
-                </button>
               </div>
-              <p className="text-gray-800 dark:text-gray-200">{note.text}</p>
+              <button
+                onClick={() => deleteNote(note.id)}
+                className="ml-4 text-gray-400 hover:text-red-500"
+              >
+                <Trash2 size={16} />
+              </button>
             </div>
-          ))
-        )}
+          </div>
+        ))}
       </div>
     </div>
   );
 };
 
-// Empty Section Component
-const EmptySection = ({ icon: Icon, title, description }) => (
-  <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-    <div className="text-center py-8">
-      <Icon size={48} className="mx-auto text-gray-400 dark:text-gray-500 mb-4" />
-      <h3 className="text-lg font-medium text-gray-800 dark:text-gray-200 mb-2">{title}</h3>
-      <p className="text-gray-600 dark:text-gray-400 text-sm">{description}</p>
-    </div>
+interface EmptySectionProps {
+  Icon: LucideIcon;
+  title: string;
+  description: string;
+}
+
+const EmptySection: React.FC<EmptySectionProps> = ({ Icon, title, description }) => (
+  <div className="text-center py-8">
+    <Icon size={48} className="mx-auto text-gray-400 dark:text-gray-600 mb-4" />
+    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">{title}</h3>
+    <p className="text-gray-500 dark:text-gray-400">{description}</p>
   </div>
 );
 
-const LocationDetailView = ({ location, customer, onBack, onUpdate, onDelete }) => {
+const LocationDetailView: React.FC<{
+  location: Location;
+  customer: Customer;
+  onBack: () => void;
+  onUpdate: (customer: Customer) => Promise<void>;
+  onDelete: (locationId: string) => Promise<void>;
+}> = ({ location, customer, onBack, onUpdate, onDelete }) => {
   const navigate = useNavigate();
   const [showEditPanel, setShowEditPanel] = useState(false);
-  const [locationJobs, setLocationJobs] = useState([]);
-  const [isLoadingJobs, setIsLoadingJobs] = useState(true);
+  const [editedLocation, setEditedLocation] = useState<Location>(location);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    totalJobs: 0,
+    totalRevenue: 0,
+    avgJobTotal: 0,
+    completionRate: 0
+  });
 
-  // Load jobs for this specific location from Firebase
   useEffect(() => {
-    const loadLocationJobs = async () => {
-      try {
-        const db = getFirestore();
-        const jobsQuery = query(
-          collection(db, 'jobs'),
-          where('locationId', '==', location.id)
-        );
+    const loadJobs = async () => {
+      if (!location.id || !customer.id) return;
 
-        const unsubscribe = onSnapshot(jobsQuery, (querySnapshot) => {
-          const jobs = [];
-          querySnapshot.forEach((doc) => {
-            jobs.push({ id: doc.id, ...doc.data() });
-          });
-          
-          // Sort jobs by date (newest first)
-          jobs.sort((a, b) => new Date(b.startDate || b.createdAt) - new Date(a.startDate || a.createdAt));
-          
-          setLocationJobs(jobs);
-          setIsLoadingJobs(false);
+      const db = getFirestore();
+      const jobsRef = collection(db, 'jobs');
+      const q = query(
+        jobsRef,
+        where('customerId', '==', customer.id),
+        where('locationId', '==', location.id)
+      );
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const jobsData: Job[] = [];
+        snapshot.forEach((doc) => {
+          const data = doc.data() as Job;
+          jobsData.push({ ...data, id: doc.id });
         });
 
-        return () => unsubscribe();
-      } catch (error) {
-        console.error('Error loading location jobs:', error);
-        setIsLoadingJobs(false);
-      }
+        // Sort jobs by date
+        jobsData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setJobs(jobsData);
+
+        // Calculate stats
+        const totalJobs = jobsData.length;
+        const totalRevenue = jobsData.reduce((sum, job) => sum + (job.total || 0), 0);
+        const avgJobTotal = totalJobs > 0 ? totalRevenue / totalJobs : 0;
+        const completedJobs = jobsData.filter(job => job.status === 'completed').length;
+        const completionRate = totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 0;
+
+        setStats({
+          totalJobs,
+          totalRevenue,
+          avgJobTotal,
+          completionRate
+        });
+
+        setLoading(false);
+      });
+
+      return () => unsubscribe();
     };
 
-    if (location.id) {
-      loadLocationJobs();
-    }
-  }, [location.id]);
+    loadJobs();
+  }, [location.id, customer.id]);
 
-  const getJobStatusColor = (status) => {
+  const getStatusColor = (status: Job['status']): string => {
     switch (status) {
-      case 'completed': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
       case 'scheduled': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
       case 'in_progress': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
+      case 'completed': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
       case 'cancelled': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
     }
+  };
+
+  const handleJobClick = (jobId: string) => {
+    navigate(`/jobs/${jobId}`);
   };
 
   const handleDelete = () => {
     if (window.confirm('Are you sure you want to delete this location? This action cannot be undone.')) {
       onDelete(location.id);
     }
-  };
-
-  const handleJobClick = (jobId) => {
-    navigate(`/job/${jobId}`);
-  };
-
-  // Calculate location stats from actual jobs
-  const locationStats = {
-    totalJobs: locationJobs.length,
-    totalRevenue: locationJobs.reduce((sum, job) => {
-      const total = job.total || job.amount || job.price || 0;
-      return sum + (typeof total === 'number' ? total : 0);
-    }, 0),
-    avgJobTotal: locationJobs.length > 0 ? 
-      locationJobs.reduce((sum, job) => {
-        const total = job.total || job.amount || job.price || 0;
-        return sum + (typeof total === 'number' ? total : 0);
-      }, 0) / locationJobs.length : 0,
-    lastJobDate: locationJobs.length > 0 ? locationJobs[0].startDate || locationJobs[0].createdAt : null
   };
 
   return (
@@ -717,7 +928,7 @@ const LocationDetailView = ({ location, customer, onBack, onUpdate, onDelete }) 
                   onClick={() => setShowEditPanel(true)}
                   className="ml-3 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                 >
-                  <Edit size={18} />
+                  <Edit2 size={18} />
                 </button>
               </div>
               
@@ -784,15 +995,15 @@ const LocationDetailView = ({ location, customer, onBack, onUpdate, onDelete }) 
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
               <h2 className="text-lg font-medium text-gray-800 dark:text-gray-100 mb-4 flex items-center">
                 <Calendar size={20} className="mr-2" />
-                Job History ({locationJobs.length})
+                Job History ({jobs.length})
               </h2>
               
-              {isLoadingJobs ? (
+              {loading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                   <span className="ml-3 text-gray-600 dark:text-gray-400">Loading jobs...</span>
                 </div>
-              ) : locationJobs.length === 0 ? (
+              ) : jobs.length === 0 ? (
                 <div className="text-center py-8">
                   <Calendar size={48} className="mx-auto text-gray-400 dark:text-gray-500 mb-4" />
                   <h3 className="text-lg font-medium text-gray-800 dark:text-gray-200 mb-2">No Jobs Yet</h3>
@@ -805,61 +1016,32 @@ const LocationDetailView = ({ location, customer, onBack, onUpdate, onDelete }) 
                   </button>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
-                    <thead>
-                      <tr className="bg-gray-50 dark:bg-slate-800">
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Job Number
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Type
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Date
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Technician
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Status
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Total
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
-                      {locationJobs.map(job => (
-                        <tr 
-                          key={job.id} 
-                          className="hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                          onClick={() => handleJobClick(job.id)}
-                        >
-                          <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-blue-600 dark:text-blue-400">
-                            {job.jobNumber}
-                          </td>
-                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-800 dark:text-gray-200">
-                            {job.jobType}
-                          </td>
-                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
-                            {formatDate(job.startDate || job.createdAt)}
-                          </td>
-                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
-                            {job.technician || 'Unassigned'}
-                          </td>
-                          <td className="px-4 py-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getJobStatusColor(job.status)}`}>
-                              {job.status ? job.status.charAt(0).toUpperCase() + job.status.slice(1) : 'Unknown'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-800 dark:text-gray-200">
-                            {formatCurrency(job.total || job.amount || job.price || 0)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="space-y-4">
+                  {jobs.map(job => (
+                    <div
+                      key={job.id}
+                      onClick={() => handleJobClick(job.id)}
+                      className="p-4 border border-gray-200 dark:border-slate-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h4 className="font-medium text-gray-900 dark:text-gray-100">{job.description}</h4>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            {formatDate(job.date)}
+                            {job.technician && ` • ${job.technician}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-4">
+                          <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(job.status)}`}>
+                            {job.status.replace('_', ' ')}
+                          </span>
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                            {formatCurrency(job.total)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -875,63 +1057,63 @@ const LocationDetailView = ({ location, customer, onBack, onUpdate, onDelete }) 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Projects */}
               <EmptySection 
-                icon={Users}
+                Icon={Users}
                 title="Projects"
                 description="Track multi-phase projects at this location"
               />
 
               {/* Estimates */}
               <EmptySection 
-                icon={DollarSign}
+                Icon={DollarSign}
                 title="Estimates"
                 description="View estimates for this location"
               />
 
               {/* Leads */}
               <EmptySection 
-                icon={TrendingUp}
+                Icon={TrendingUp}
                 title="Leads"
                 description="Lead opportunities for this location"
               />
 
               {/* Calls */}
               <EmptySection 
-                icon={PhoneCall}
+                Icon={PhoneCall}
                 title="Calls"
                 description="Call history for this location"
               />
 
               {/* Memberships */}
               <EmptySection 
-                icon={Award}
+                Icon={Award}
                 title="Memberships"
                 description="Membership plans for this location"
               />
 
               {/* Service Agreements */}
               <EmptySection 
-                icon={ClipboardList}
+                Icon={ClipboardList}
                 title="Service Agreements"
                 description="Service contracts for this location"
               />
 
               {/* Forms */}
               <EmptySection 
-                icon={FileText}
+                Icon={FileText}
                 title="Forms"
                 description="Forms and documentation for this location"
               />
 
               {/* Photos & Videos */}
               <EmptySection 
-                icon={Camera}
+                Icon={Camera}
                 title="Photos & Videos"
                 description="Visual documentation for this location"
               />
 
               {/* Attachments */}
               <EmptySection 
-                icon={Paperclip}
+                Icon={Paperclip}
                 title="Attachments"
                 description="Files related to this location"
               />
@@ -946,22 +1128,20 @@ const LocationDetailView = ({ location, customer, onBack, onUpdate, onDelete }) 
               <div className="space-y-4">
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Total Jobs</span>
-                  <span className="font-medium text-gray-800 dark:text-gray-100">{locationStats.totalJobs}</span>
+                  <span className="font-medium text-gray-800 dark:text-gray-100">{stats.totalJobs}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Total Revenue</span>
-                  <span className="font-medium text-gray-800 dark:text-gray-100">{formatCurrency(locationStats.totalRevenue)}</span>
+                  <span className="font-medium text-gray-800 dark:text-gray-100">{formatCurrency(stats.totalRevenue)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Avg Job Value</span>
-                  <span className="font-medium text-gray-800 dark:text-gray-100">{formatCurrency(locationStats.avgJobTotal)}</span>
+                  <span className="font-medium text-gray-800 dark:text-gray-100">{formatCurrency(stats.avgJobTotal)}</span>
                 </div>
-                {locationStats.lastJobDate && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Last Service</span>
-                    <span className="font-medium text-gray-800 dark:text-gray-100">{formatDate(locationStats.lastJobDate)}</span>
-                  </div>
-                )}
+                <div className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">Completion Rate</span>
+                  <span className="font-medium text-gray-800 dark:text-gray-100">{stats.completionRate.toFixed(2)}%</span>
+                </div>
               </div>
             </div>
 
@@ -1044,7 +1224,7 @@ const LocationDetailView = ({ location, customer, onBack, onUpdate, onDelete }) 
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
               <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100 mb-4">Recent Activity</h3>
               <div className="space-y-3">
-                {locationJobs.slice(0, 3).map((job, index) => (
+                {jobs.slice(0, 3).map((job, index) => (
                   <div key={job.id} className="flex items-start">
                     <div className={`p-1.5 rounded-full mr-3 mt-0.5 ${
                       job.status === 'completed' ? 'bg-green-100 dark:bg-green-900/50' :
@@ -1060,13 +1240,13 @@ const LocationDetailView = ({ location, customer, onBack, onUpdate, onDelete }) 
                       )}
                     </div>
                     <div>
-                      <p className="text-sm text-gray-800 dark:text-gray-100">{job.jobType}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{formatDate(job.startDate || job.createdAt)}</p>
+                      <p className="text-sm text-gray-800 dark:text-gray-100">{job.description}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{formatDate(job.date)}</p>
                     </div>
                   </div>
                 ))}
                 
-                {locationJobs.length === 0 && (
+                {jobs.length === 0 && (
                   <p className="text-gray-500 dark:text-gray-400 text-sm text-center py-4">
                     No recent activity
                   </p>
