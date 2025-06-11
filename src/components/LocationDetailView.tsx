@@ -12,33 +12,17 @@ import {
 } from 'firebase/firestore';
 import TagInput from './TagInput';
 
-// Add type declarations for Google Maps
 declare global {
-  namespace google {
-    namespace maps {
-      namespace places {
-        class Autocomplete {
-          constructor(
-            input: HTMLInputElement,
-            options?: {
-              types?: string[];
-              componentRestrictions?: { country: string };
-            }
-          );
-          addListener(event: string, callback: () => void): void;
-          getPlace(): {
-            address_components?: Array<{
-              long_name: string;
-              short_name: string;
-              types: string[];
-            }>;
-          };
-        }
-      }
-      namespace event {
-        function clearInstanceListeners(instance: any): void;
-      }
-    }
+  interface Window {
+    google?: typeof google;
+  }
+}
+
+declare namespace google.maps.places {
+  class Autocomplete {
+    constructor(input: HTMLInputElement, options?: object);
+    addListener(event: string, handler: () => void): void;
+    getPlace(): any;
   }
 }
 
@@ -99,53 +83,48 @@ interface Place {
 
 const initializeGooglePlaces = (
   inputElement: HTMLInputElement,
-  onPlaceSelected: (addressData: GooglePlaceAddress) => void
+  onPlaceSelected: (address: GooglePlaceAddress) => void
 ) => {
-  if (!window.google?.maps?.places) {
-    throw new Error('Google Maps Places API not loaded');
-  }
-
-  const autocomplete = new window.google.maps.places.Autocomplete(inputElement, {
-    types: ['address'],
-    componentRestrictions: { country: 'us' }
-  });
-
-  autocomplete.addListener('place_changed', () => {
-    const place = autocomplete.getPlace();
-    if (!place.address_components) return;
-
-    const addressData: GooglePlaceAddress = {
-      street: '',
-      city: '',
-      state: '',
-      zip: ''
-    };
-
-    place.address_components.forEach(component => {
-      const type = component.types[0];
-      switch (type) {
-        case 'street_number':
-          addressData.street = component.long_name;
-          break;
-        case 'route':
-          addressData.street += ' ' + component.long_name;
-          break;
-        case 'locality':
-          addressData.city = component.long_name;
-          break;
-        case 'administrative_area_level_1':
-          addressData.state = component.short_name;
-          break;
-        case 'postal_code':
-          addressData.zip = component.long_name;
-          break;
+  if (window.google && window.google.maps && window.google.maps.places) {
+    const autocomplete = new window.google.maps.places.Autocomplete(inputElement, {
+      types: ['address'],
+      componentRestrictions: { country: 'us' }
+    });
+    autocomplete.addListener('place_changed', () => {
+      const place = autocomplete.getPlace();
+      if (place.address_components) {
+        const addressData: GooglePlaceAddress = {
+          street: '',
+          city: '',
+          state: '',
+          zip: ''
+        };
+        place.address_components.forEach((component: { long_name: string; short_name: string; types: string[] }) => {
+          const type = component.types[0];
+          switch (type) {
+            case 'street_number':
+              addressData.street = component.long_name;
+              break;
+            case 'route':
+              addressData.street += ' ' + component.long_name;
+              break;
+            case 'locality':
+              addressData.city = component.long_name;
+              break;
+            case 'administrative_area_level_1':
+              addressData.state = component.short_name;
+              break;
+            case 'postal_code':
+              addressData.zip = component.long_name;
+              break;
+          }
+        });
+        onPlaceSelected(addressData);
       }
     });
-
-    onPlaceSelected(addressData);
-  });
-
-  return autocomplete;
+    return autocomplete;
+  }
+  return null;
 };
 
 // Type definitions for Customer and Location
@@ -220,7 +199,7 @@ const LocationEditPanel: React.FC<LocationEditPanelProps> = ({ location, custome
   const [editedLocation, setEditedLocation] = useState<Location>(location);
   const [activeTab, setActiveTab] = useState<string>('details');
   const [newContact, setNewContact] = useState<NewContact>({ type: 'phone', value: '', notes: '', category: 'mobile' });
-  const streetInputRef = useRef<HTMLInputElement>(null);
+  const streetInputRef = useRef<HTMLInputElement | null>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   useEffect(() => {
@@ -242,7 +221,7 @@ const LocationEditPanel: React.FC<LocationEditPanelProps> = ({ location, custome
 
     return () => {
       if (autocompleteRef.current && window.google) {
-        window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
+        (window.google as any).maps.event.clearInstanceListeners(autocompleteRef.current);
       }
     };
   }, [activeTab]);

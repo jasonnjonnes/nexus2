@@ -12,6 +12,22 @@ import {
 } from "firebase/firestore";
 import TagInput from './TagInput';
 
+declare global {
+  interface Window {
+    google?: typeof google;
+  }
+}
+
+// Add Google Maps types if not present
+// (If you already have them in a .d.ts file, you can skip this)
+declare namespace google.maps.places {
+  class Autocomplete {
+    constructor(input: HTMLInputElement, options?: object);
+    addListener(event: string, handler: () => void): void;
+    getPlace(): any;
+  }
+}
+
 // Helper functions
 const formatDate = (dateString: string | undefined) => dateString ? new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
 const formatCurrency = (amount: number | undefined) => `$${amount != null ? amount.toFixed(2) : '0.00'}`;
@@ -30,17 +46,16 @@ const initializeGooglePlaces = (
   inputElement: HTMLInputElement,
   onPlaceSelected: (address: GooglePlaceAddress) => void
 ) => {
-  if ((window as any).google && (window as any).google.maps && (window as any).google.maps.places) {
-    const autocomplete = new (window as any).google.maps.places.Autocomplete(inputElement, {
+  if (window.google && window.google.maps && window.google.maps.places) {
+    const autocomplete = new window.google.maps.places.Autocomplete(inputElement, {
       componentRestrictions: { country: ['us'] },
       fields: ['address_components', 'formatted_address', 'geometry']
     });
-
     autocomplete.addListener('place_changed', () => {
       const place = autocomplete.getPlace();
       if (place.address_components) {
-        const addressComponents: any = {};
-        place.address_components.forEach((component: any) => {
+        const addressComponents: { [key: string]: string } = {};
+        place.address_components.forEach((component: { long_name: string; short_name: string; types: string[] }) => {
           const types: string[] = component.types;
           if (types.includes('street_number')) {
             addressComponents.streetNumber = component.long_name;
@@ -58,7 +73,6 @@ const initializeGooglePlaces = (
             addressComponents.zip = component.long_name;
           }
         });
-
         const street = [addressComponents.streetNumber, addressComponents.route].filter(Boolean).join(' ');
         onPlaceSelected({
           street,
@@ -68,7 +82,6 @@ const initializeGooglePlaces = (
         });
       }
     });
-
     return autocomplete;
   }
   return null;
@@ -151,8 +164,8 @@ const AddLocationModal: React.FC<AddLocationModalProps> = ({ customer, isOpen, o
     isPrimary: false
   });
 
-  const streetInputRef = useRef(null);
-  const autocompleteRef = useRef(null);
+  const streetInputRef = useRef<HTMLInputElement | null>(null);
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   useEffect(() => {
     if (isOpen && streetInputRef.current) {
@@ -168,8 +181,8 @@ const AddLocationModal: React.FC<AddLocationModalProps> = ({ customer, isOpen, o
     }
 
     return () => {
-      if (autocompleteRef.current && (window as any).google) {
-        (window as any).google.maps.event.clearInstanceListeners(autocompleteRef.current);
+      if (autocompleteRef.current && window.google) {
+        window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
       }
     };
   }, [isOpen]);
@@ -438,8 +451,8 @@ const CustomerEditPanel: React.FC<CustomerEditPanelProps> = ({ customer, isOpen,
   const [editedCustomer, setEditedCustomer] = useState(customer);
   const [activeTab, setActiveTab] = useState('details');
   const [newContact, setNewContact] = useState({ type: 'phone', value: '', notes: '', category: 'mobile' });
-  const streetInputRef = useRef(null);
-  const autocompleteRef = useRef(null);
+  const streetInputRef = useRef<HTMLInputElement | null>(null);
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   useEffect(() => {
     setEditedCustomer(customer);
@@ -456,8 +469,8 @@ const CustomerEditPanel: React.FC<CustomerEditPanelProps> = ({ customer, isOpen,
     }
 
     return () => {
-      if (autocompleteRef.current && (window as any).google) {
-        (window as any).google.maps.event.clearInstanceListeners(autocompleteRef.current);
+      if (autocompleteRef.current && window.google) {
+        window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
       }
     };
   }, [activeTab]);
@@ -878,7 +891,7 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, onBac
   const navigate = useNavigate();
   const [showEditPanel, setShowEditPanel] = useState(false);
   const [showAddLocation, setShowAddLocation] = useState(false);
-  const [customerJobs, setCustomerJobs] = useState<any[]>([]);
+  const [customerJobs, setCustomerJobs] = useState<Job[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
 
   // Load jobs for this customer from Firebase
@@ -892,9 +905,9 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, onBac
         );
 
         const unsubscribe = onSnapshot(jobsQuery, (querySnapshot) => {
-          const jobs: any[] = [];
+          const jobs: Job[] = [];
           querySnapshot.forEach((doc) => {
-            jobs.push({ id: doc.id, ...doc.data() });
+            jobs.push({ id: doc.id, ...doc.data() } as Job);
           });
           
           // Sort jobs by date (newest first)
