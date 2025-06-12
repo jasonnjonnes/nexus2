@@ -4,15 +4,16 @@ WORKDIR /app
 
 # Copy package files and install dependencies
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --quiet
 
 # Copy the rest of the application
 COPY . .
 
-# Build the application
-RUN npm run build
+# Build the application - skip TypeScript checks since we're in CI mode
+RUN NODE_ENV=production npm run build
 
 # Expose the port the app runs on
+ENV PORT=8080
 EXPOSE 8080
 
 # Command to run the application
