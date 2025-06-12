@@ -13,6 +13,12 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import CustomerDetailView from '../components/CustomerDetailView';
 import LocationDetailView from '../components/LocationDetailView';
 import TagInput from '../components/TagInput';
+import CustomerImportModal from '../components/CustomerImportModal';
+import JobImportModal from '../components/JobImportModal';
+import InvoiceImportModal from '../components/InvoiceImportModal';
+import EstimateImportModal from '../components/EstimateImportModal';
+import LocationImportModal from '../components/LocationImportModal';
+import { Menu } from '@headlessui/react';
 
 // --- Helper Functions ---
 const getStatusColor = (status) => {
@@ -138,6 +144,14 @@ const Customers = () => {
   const [userId, setUserId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showCustomerImport, setShowCustomerImport] = useState(false);
+  const [showJobImport, setShowJobImport] = useState(false);
+  const [showInvoiceImport, setShowInvoiceImport] = useState(false);
+  const [showEstimateImport, setShowEstimateImport] = useState(false);
+  const [showLocationImport, setShowLocationImport] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const customersPerPage = 25;
+  const [unsubscribeCustomers, setUnsubscribeCustomers] = useState(null);
 
   // Initialize Firebase
   useEffect(() => {
@@ -214,39 +228,36 @@ const Customers = () => {
   // Set up Firestore listener for customers
   useEffect(() => {
     if (!db || !userId) {
-      console.log('⏳ DB or userId not ready:', { db: !!db, userId });
       return;
     }
-
-    console.log('📡 Setting up Firestore listener for user:', userId);
-    
-    // Use a simple collection path with a query filter by userId
     const customerCollectionPath = 'customers';
-    console.log('📂 Collection path:', customerCollectionPath);
-    
-    // Create a query that filters customers by the current user's ID
     const q = query(
       collection(db, customerCollectionPath),
       where("userId", "==", userId)
     );
-    
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      console.log('📊 Firestore snapshot received, docs:', querySnapshot.size);
       const customersData = [];
       querySnapshot.forEach((doc) => {
         const data = { id: doc.id, ...doc.data() };
-        console.log('📄 Customer doc:', data);
         customersData.push(data);
       });
-      console.log('✅ Setting customers data:', customersData);
       setCustomers(customersData);
     }, (firestoreError) => {
-      console.error("❌ Firestore snapshot error:", firestoreError);
       setError("Could not fetch customer data from Firestore: " + firestoreError.message);
     });
-    
+    setUnsubscribeCustomers(() => unsubscribe);
     return () => unsubscribe();
   }, [db, userId]);
+
+  // Helper to pause/resume listener
+  const pauseCustomerListener = () => {
+    if (unsubscribeCustomers) unsubscribeCustomers();
+  };
+  const resumeCustomerListener = () => {
+    // Just trigger the useEffect by updating userId (or force re-mount if needed)
+    setUnsubscribeCustomers(null);
+    // The useEffect will re-subscribe automatically on next render
+  };
 
   const handleCreateCustomer = useCallback(async (newCustomerData) => { 
     console.log('➕ Creating customer:', newCustomerData);
@@ -359,6 +370,23 @@ const Customers = () => {
   const locationData = selectedLocationId && customerData ? 
     customerData.locations?.find(l => l.id === selectedLocationId) : null;
   
+  // Pagination logic
+  const totalPages = Math.ceil(userCustomers.length / customersPerPage);
+  const paginatedCustomers = userCustomers.slice((currentPage - 1) * customersPerPage, currentPage * customersPerPage);
+  
+  // Pagination window logic (show max 20 pages at a time)
+  const maxPageButtons = 20;
+  let startPage = Math.max(1, currentPage - Math.floor(maxPageButtons / 2));
+  let endPage = startPage + maxPageButtons - 1;
+  if (endPage > totalPages) {
+    endPage = totalPages;
+    startPage = Math.max(1, endPage - maxPageButtons + 1);
+  }
+  const pageNumbers = [];
+  for (let i = startPage; i <= endPage; i++) {
+    pageNumbers.push(i);
+  }
+  
   if (isLoading) {
     return <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-slate-900"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div><p className="ml-4 text-gray-600 dark:text-gray-300">Connecting to database...</p></div>;
   }
@@ -430,6 +458,66 @@ const Customers = () => {
               </button>
             </div>
           </div>
+          <div className="flex items-center space-x-3 mb-4">
+            <Menu as="div" className="relative inline-block text-left">
+              <Menu.Button className="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors text-gray-800 dark:text-gray-200 flex items-center">
+                Import
+                <ChevronDown size={16} className="ml-1" />
+              </Menu.Button>
+              <Menu.Items className="absolute left-0 mt-2 w-64 origin-top-left bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg z-20 focus:outline-none">
+                <Menu.Item>
+                  {({ active }) => (
+                    <button
+                      className={`w-full text-left px-4 py-2 text-sm ${active ? 'bg-gray-100 dark:bg-slate-700' : ''}`}
+                      onClick={() => setShowCustomerImport(true)}
+                    >
+                      Import Customers
+                    </button>
+                  )}
+                </Menu.Item>
+                <Menu.Item>
+                  {({ active }) => (
+                    <button
+                      className={`w-full text-left px-4 py-2 text-sm ${active ? 'bg-gray-100 dark:bg-slate-700' : ''}`}
+                      onClick={() => setShowInvoiceImport(true)}
+                    >
+                      Import Invoices
+                    </button>
+                  )}
+                </Menu.Item>
+                <Menu.Item>
+                  {({ active }) => (
+                    <button
+                      className={`w-full text-left px-4 py-2 text-sm ${active ? 'bg-gray-100 dark:bg-slate-700' : ''}`}
+                      onClick={() => setShowEstimateImport(true)}
+                    >
+                      Import Estimates
+                    </button>
+                  )}
+                </Menu.Item>
+                <Menu.Item>
+                  {({ active }) => (
+                    <button
+                      className={`w-full text-left px-4 py-2 text-sm ${active ? 'bg-gray-100 dark:bg-slate-700' : ''}`}
+                      onClick={() => setShowJobImport(true)}
+                    >
+                      Import Jobs
+                    </button>
+                  )}
+                </Menu.Item>
+                <Menu.Item>
+                  {({ active }) => (
+                    <button
+                      className={`w-full text-left px-4 py-2 text-sm ${active ? 'bg-gray-100 dark:bg-slate-700' : ''}`}
+                      onClick={() => setShowLocationImport(true)}
+                    >
+                      Import Locations
+                    </button>
+                  )}
+                </Menu.Item>
+              </Menu.Items>
+            </Menu>
+          </div>
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border overflow-hidden border-gray-200 dark:border-slate-700">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
@@ -446,7 +534,7 @@ const Customers = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
-                  {userCustomers.map(customer => (
+                  {paginatedCustomers.map(customer => (
                     <tr key={customer.id} onClick={() => handleCustomerClick(customer.id)} className="hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-blue-600 dark:text-blue-400">{customer.name}</div>
@@ -477,6 +565,89 @@ const Customers = () => {
               </table>
             </div>
           </div>
+          {/* Pagination controls */}
+          {totalPages > 1 && (
+            <div className="flex justify-center items-center mt-6 space-x-1">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - maxPageButtons))}
+                disabled={startPage === 1}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 disabled:opacity-50"
+                aria-label="Previous page range"
+              >
+                &#8592;
+              </button>
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 disabled:opacity-50"
+                aria-label="Previous page"
+              >
+                &lt;
+              </button>
+              {pageNumbers.map(page => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`px-3 py-1 rounded border border-gray-300 dark:border-slate-600 ${currentPage === page ? 'bg-blue-600 text-white' : 'bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200'}`}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 disabled:opacity-50"
+                aria-label="Next page"
+              >
+                &gt;
+              </button>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + maxPageButtons))}
+                disabled={endPage === totalPages}
+                className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 disabled:opacity-50"
+                aria-label="Next page range"
+              >
+                &#8594;
+              </button>
+            </div>
+          )}
+          {showCustomerImport && (
+            <CustomerImportModal
+              isOpen={showCustomerImport}
+              onClose={() => setShowCustomerImport(false)}
+              onComplete={() => { resumeCustomerListener(); }}
+              userId={userId}
+              pauseListener={pauseCustomerListener}
+            />
+          )}
+          {showJobImport && (
+            <JobImportModal
+              isOpen={showJobImport}
+              onClose={() => setShowJobImport(false)}
+              onComplete={() => {/* Optionally refresh jobs here */}}
+            />
+          )}
+          {showInvoiceImport && (
+            <InvoiceImportModal
+              isOpen={showInvoiceImport}
+              onClose={() => setShowInvoiceImport(false)}
+              onComplete={() => {/* Optionally refresh invoices here */}}
+            />
+          )}
+          {showEstimateImport && (
+            <EstimateImportModal
+              isOpen={showEstimateImport}
+              onClose={() => setShowEstimateImport(false)}
+              onComplete={() => {/* Optionally refresh estimates here */}}
+            />
+          )}
+          {showLocationImport && (
+            <LocationImportModal
+              isOpen={showLocationImport}
+              onClose={() => setShowLocationImport(false)}
+              onComplete={() => {/* Optionally refresh locations here */}}
+            />
+          )}
         </div>
       );
   }

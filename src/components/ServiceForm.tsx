@@ -1,17 +1,28 @@
 import React from 'react';
 import { ServiceFormState } from '../types/pricebook';
 import { Tab } from '@headlessui/react';
+import CategoryTreeSelector from './CategoryTreeSelector';
+import type { Category } from '../types/pricebook';
+import classNames from 'classnames';
+import { GLAccount } from '../types/pricebook';
+import MultiSelectTag from './MultiSelectTag';
 
 interface ServiceFormProps {
   formData: ServiceFormState;
   onChange: (field: keyof ServiceFormState, value: any) => void;
-  categories: Array<{ id: string; name: string; type: string }>;
+  categories: Category[];
   materials: Array<{ id: string; name: string }>;
   equipment: Array<{ id: string; name: string }>;
   onSubmit: (e: React.FormEvent) => void;
   onCancel: () => void;
   isSubmitting: boolean;
+  isSaving?: boolean;
+  error?: string | null;
+  glAccounts: GLAccount[];
+  allServices: { id: string; name: string }[];
 }
+
+const TAB_HEIGHT = 'min-h-[420px]'; // adjust as needed for your content
 
 const ServiceForm: React.FC<ServiceFormProps> = ({
   formData,
@@ -21,7 +32,11 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
   equipment,
   onSubmit,
   onCancel,
-  isSubmitting
+  isSubmitting,
+  isSaving,
+  error,
+  glAccounts,
+  allServices
 }) => {
   const tabs = [
     { name: 'Basic Info', current: true },
@@ -55,30 +70,30 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
   return (
     <form onSubmit={onSubmit} className="space-y-6">
       <Tab.Group>
-        <Tab.List className="flex space-x-1 rounded-xl bg-blue-900/20 p-1">
-          {tabs.map((tab) => (
+        <Tab.List className="flex space-x-1 rounded-xl bg-gray-100 dark:bg-slate-800 p-1 border-b border-gray-200 dark:border-slate-700">
+          {tabs.map((tab, idx) => (
             <Tab
               key={tab.name}
               className={({ selected }) =>
-                [
-                  'w-full rounded-lg py-2.5 text-sm font-medium leading-5',
-                  'ring-white ring-opacity-60 ring-offset-2 ring-offset-blue-400 focus:outline-none focus:ring-2',
+                classNames(
+                  'w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors',
                   selected
-                    ? 'bg-white shadow text-blue-700'
-                    : 'text-blue-100 hover:bg-white/[0.12] hover:text-white'
-                ].join(' ')
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600',
+                  'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
+                )
               }
             >
               {tab.name}
             </Tab>
           ))}
         </Tab.List>
-        <Tab.Panels className="mt-4">
+        <Tab.Panels className={TAB_HEIGHT + ' mt-4'}>
           {/* Basic Info Tab */}
           <Tab.Panel className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="code" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="code" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Code
                 </label>
                 <input
@@ -86,24 +101,12 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   id="code"
                   value={formData.code}
                   onChange={(e) => handleChange('code', e.target.value)}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                   required
                 />
               </div>
               <div>
-                <label htmlFor="serviceTitanId" className="block text-sm font-medium text-gray-700">
-                  ServiceTitan ID
-                </label>
-                <input
-                  type="text"
-                  id="serviceTitanId"
-                  value={formData.serviceTitanId || ''}
-                  onChange={(e) => handleChange('serviceTitanId', e.target.value)}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Name
                 </label>
                 <input
@@ -111,24 +114,18 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   id="name"
                   value={formData.name}
                   onChange={(e) => handleChange('name', e.target.value)}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                   required
                 />
               </div>
               <div className="sm:col-span-2">
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Description
                 </label>
-                <textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => handleChange('description', e.target.value)}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                  rows={3}
-                />
+                <div className="mt-1 p-2 border rounded bg-gray-50 min-h-[40px]" dangerouslySetInnerHTML={{ __html: formData.description }} />
               </div>
               <div className="sm:col-span-2">
-                <label htmlFor="warrantyDescription" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="warrantyDescription" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Warranty Description
                 </label>
                 <textarea
@@ -136,7 +133,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   value={formData.warrantyDescription}
                   onChange={(e) => handleChange('warrantyDescription', e.target.value)}
                   rows={3}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                 />
               </div>
               <div className="flex items-center">
@@ -147,7 +144,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   onChange={(e) => handleBooleanChange('laborService', e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <label htmlFor="laborService" className="ml-2 block text-sm text-gray-900">
+                <label htmlFor="laborService" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                   Labor Service
                 </label>
               </div>
@@ -159,7 +156,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   onChange={(e) => handleBooleanChange('active', e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <label htmlFor="active" className="ml-2 block text-sm text-gray-900">
+                <label htmlFor="active" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                   Active
                 </label>
               </div>
@@ -177,7 +174,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   onChange={(e) => handleBooleanChange('useStaticPrice', e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <label htmlFor="useStaticPrice" className="ml-2 block text-sm text-gray-900">
+                <label htmlFor="useStaticPrice" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                   Use Static Price
                 </label>
               </div>
@@ -189,14 +186,14 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   onChange={(e) => handleBooleanChange('useDynamicPricing', e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <label htmlFor="useDynamicPricing" className="ml-2 block text-sm text-gray-900">
+                <label htmlFor="useDynamicPricing" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                   Use Dynamic Pricing
                 </label>
               </div>
               {formData.useStaticPrice && (
                 <>
                   <div>
-                    <label htmlFor="staticPrice" className="block text-sm font-medium text-gray-700">
+                    <label htmlFor="staticPrice" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                       Static Price
                     </label>
                     <input
@@ -206,49 +203,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                       onChange={(e) => handleNumberChange('staticPrice', e.target.value)}
                       step="0.01"
                       min="0"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="staticMemberPrice" className="block text-sm font-medium text-gray-700">
-                      Static Member Price
-                    </label>
-                    <input
-                      type="number"
-                      id="staticMemberPrice"
-                      value={formData.staticMemberPrice}
-                      onChange={(e) => handleNumberChange('staticMemberPrice', e.target.value)}
-                      step="0.01"
-                      min="0"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="staticAddOnPrice" className="block text-sm font-medium text-gray-700">
-                      Static Add-On Price
-                    </label>
-                    <input
-                      type="number"
-                      id="staticAddOnPrice"
-                      value={formData.staticAddOnPrice}
-                      onChange={(e) => handleNumberChange('staticAddOnPrice', e.target.value)}
-                      step="0.01"
-                      min="0"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="staticMemberAddOnPrice" className="block text-sm font-medium text-gray-700">
-                      Static Member Add-On Price
-                    </label>
-                    <input
-                      type="number"
-                      id="staticMemberAddOnPrice"
-                      value={formData.staticMemberAddOnPrice}
-                      onChange={(e) => handleNumberChange('staticMemberAddOnPrice', e.target.value)}
-                      step="0.01"
-                      min="0"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                      className="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     />
                   </div>
                 </>
@@ -256,7 +211,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
               {formData.useDynamicPricing && (
                 <>
                   <div>
-                    <label htmlFor="hours" className="block text-sm font-medium text-gray-700">
+                    <label htmlFor="hours" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                       Hours
                     </label>
                     <input
@@ -266,11 +221,11 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                       onChange={(e) => handleNumberChange('hours', e.target.value)}
                       step="0.1"
                       min="0"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                      className="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     />
                   </div>
                   <div>
-                    <label htmlFor="estimatedLaborCost" className="block text-sm font-medium text-gray-700">
+                    <label htmlFor="estimatedLaborCost" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                       Estimated Labor Cost
                     </label>
                     <input
@@ -280,7 +235,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                       onChange={(e) => handleNumberChange('estimatedLaborCost', e.target.value)}
                       step="0.01"
                       min="0"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                      className="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     />
                   </div>
                 </>
@@ -291,29 +246,19 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
           {/* Categories Tab */}
           <Tab.Panel className="space-y-4">
             <div className="grid grid-cols-1 gap-4">
-              <div>
-                <label htmlFor="categories" className="block text-sm font-medium text-gray-700">
-                  Categories
-                </label>
-                <select
-                  id="categories"
-                  multiple
-                  value={formData.categories}
-                  onChange={(e) => handleArrayChange('categories', Array.from(e.target.selectedOptions, option => option.value))}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                  size={5}
-                >
-                  {categories
-                    .filter(cat => cat.type === 'service')
-                    .map(category => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                </select>
-                <p className="mt-1 text-sm text-gray-500">
-                  Hold Ctrl/Cmd to select multiple categories
-                </p>
+              <div className="sm:col-span-2 dark:text-gray-100">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Categories</label>
+                <div className="dark:text-gray-100">
+                  <CategoryTreeSelector
+                    categories={categories}
+                    selected={formData.categories}
+                    onChange={ids => handleArrayChange('categories', ids)}
+                    type="service"
+                  />
+                  <p className="mt-1 text-sm text-gray-500">
+                    Hold Ctrl/Cmd to select multiple categories
+                  </p>
+                </div>
               </div>
               <div className="flex items-center">
                 <input
@@ -323,7 +268,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   onChange={(e) => handleBooleanChange('excludeFromPricebookWizard', e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <label htmlFor="excludeFromPricebookWizard" className="ml-2 block text-sm text-gray-900">
+                <label htmlFor="excludeFromPricebookWizard" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                   Exclude from Pricebook Wizard
                 </label>
               </div>
@@ -334,84 +279,48 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
           <Tab.Panel className="space-y-4">
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <label htmlFor="linkedMaterials" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="linkedMaterials" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Linked Materials
                 </label>
-                <select
-                  id="linkedMaterials"
-                  multiple
-                  value={formData.linkedMaterials}
-                  onChange={(e) => handleArrayChange('linkedMaterials', Array.from(e.target.selectedOptions, option => option.value))}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                  size={5}
-                >
-                  {materials.map(material => (
-                    <option key={material.id} value={material.id}>
-                      {material.name}
-                    </option>
-                  ))}
-                </select>
+                <MultiSelectTag
+                  options={materials}
+                  selected={formData.linkedMaterials}
+                  onChange={(ids: string[]) => handleArrayChange('linkedMaterials', ids)}
+                  placeholder="Search and select materials..."
+                />
               </div>
               <div>
-                <label htmlFor="linkedEquipment" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="linkedEquipment" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Linked Equipment
                 </label>
-                <select
-                  id="linkedEquipment"
-                  multiple
-                  value={formData.linkedEquipment}
-                  onChange={(e) => handleArrayChange('linkedEquipment', Array.from(e.target.selectedOptions, option => option.value))}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                  size={5}
-                >
-                  {equipment.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
+                <MultiSelectTag
+                  options={equipment}
+                  selected={formData.linkedEquipment}
+                  onChange={(ids: string[]) => handleArrayChange('linkedEquipment', ids)}
+                  placeholder="Search and select equipment..."
+                />
               </div>
               <div>
-                <label htmlFor="upgrades" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="upgrades" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Upgrades
                 </label>
-                <select
-                  id="upgrades"
-                  multiple
-                  value={formData.upgrades}
-                  onChange={(e) => handleArrayChange('upgrades', Array.from(e.target.selectedOptions, option => option.value))}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                  size={5}
-                >
-                  {categories
-                    .filter(cat => cat.type === 'service')
-                    .map(category => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                </select>
+                <MultiSelectTag
+                  options={allServices.filter(svc => svc.name !== formData.name)}
+                  selected={formData.upgrades}
+                  onChange={(ids: string[]) => handleArrayChange('upgrades', ids)}
+                  placeholder="Search and select upgrades..."
+                />
               </div>
               <div>
-                <label htmlFor="recommendations" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="recommendations" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Recommendations
                 </label>
-                <select
-                  id="recommendations"
-                  multiple
-                  value={formData.recommendations}
-                  onChange={(e) => handleArrayChange('recommendations', Array.from(e.target.selectedOptions, option => option.value))}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                  size={5}
-                >
-                  {categories
-                    .filter(cat => cat.type === 'service')
-                    .map(category => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                </select>
+                <MultiSelectTag
+                  options={allServices.filter(svc => svc.name !== formData.name)}
+                  selected={formData.recommendations}
+                  onChange={(ids: string[]) => handleArrayChange('recommendations', ids)}
+                  placeholder="Search and select recommendations..."
+                />
               </div>
             </div>
           </Tab.Panel>
@@ -420,40 +329,53 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
           <Tab.Panel className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="crossSaleGroup" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="crossSaleGroup" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Cross Sale Group
                 </label>
                 <input
                   type="text"
                   id="crossSaleGroup"
-                  value={formData.crossSaleGroup}
-                  onChange={(e) => handleChange('crossSaleGroup', e.target.value)}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  value={formData.crossSaleGroup || ''}
+                  onChange={e => handleChange('crossSaleGroup', e.target.value)}
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  placeholder="e.g. Water Heaters"
                 />
               </div>
               <div>
-                <label htmlFor="generalLedgerAccount" className="block text-sm font-medium text-gray-700">
-                  General Ledger Account
+                <label htmlFor="revenueAccount" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Revenue Account
                 </label>
-                <input
-                  type="text"
-                  id="generalLedgerAccount"
+                <select
+                  id="revenueAccount"
                   value={formData.generalLedgerAccount}
-                  onChange={(e) => handleChange('generalLedgerAccount', e.target.value)}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                />
+                  onChange={e => handleChange('generalLedgerAccount', e.target.value)}
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                >
+                  <option value="">Select Revenue Account</option>
+                  {glAccounts.filter(acc => acc.active && acc.type === 'Revenue').map(acc => (
+                    <option key={acc.id} value={acc.accountNumber}>
+                      {acc.accountNumber} - {acc.accountName}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
-                <label htmlFor="expenseAccount" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="expenseAccount" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Expense Account
                 </label>
-                <input
-                  type="text"
+                <select
                   id="expenseAccount"
                   value={formData.expenseAccount}
-                  onChange={(e) => handleChange('expenseAccount', e.target.value)}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                />
+                  onChange={e => handleChange('expenseAccount', e.target.value)}
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                >
+                  <option value="">Select Expense Account</option>
+                  {glAccounts.filter(acc => acc.active && acc.type === 'Expense').map(acc => (
+                    <option key={acc.id} value={acc.accountNumber}>
+                      {acc.accountNumber} - {acc.accountName}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="flex items-center">
                 <input
@@ -463,7 +385,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   onChange={(e) => handleBooleanChange('allowDiscounts', e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <label htmlFor="allowDiscounts" className="ml-2 block text-sm text-gray-900">
+                <label htmlFor="allowDiscounts" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                   Allow Discounts
                 </label>
               </div>
@@ -475,7 +397,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   onChange={(e) => handleBooleanChange('allowMembershipDiscounts', e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <label htmlFor="allowMembershipDiscounts" className="ml-2 block text-sm text-gray-900">
+                <label htmlFor="allowMembershipDiscounts" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                   Allow Membership Discounts
                 </label>
               </div>
@@ -487,7 +409,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   onChange={(e) => handleBooleanChange('taxable', e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <label htmlFor="taxable" className="ml-2 block text-sm text-gray-900">
+                <label htmlFor="taxable" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                   Taxable
                 </label>
               </div>
@@ -498,7 +420,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
           <Tab.Panel className="space-y-4">
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <label htmlFor="conversionTags" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="conversionTags" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Conversion Tags
                 </label>
                 <input
@@ -506,7 +428,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   id="conversionTags"
                   value={formData.conversionTags.join(', ')}
                   onChange={(e) => handleArrayChange('conversionTags', e.target.value.split(',').map(tag => tag.trim()))}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                   placeholder="Enter tags separated by commas"
                 />
               </div>
@@ -523,7 +445,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
           <Tab.Panel className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="commissionPercentage" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="commissionPercentage" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Commission Percentage
                 </label>
                 <input
@@ -534,11 +456,11 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   step="0.01"
                   min="0"
                   max="100"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                 />
               </div>
               <div>
-                <label htmlFor="bonusPercentage" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="bonusPercentage" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Bonus Percentage
                 </label>
                 <input
@@ -549,7 +471,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   step="0.01"
                   min="0"
                   max="100"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                 />
               </div>
               <div className="flex items-center">
@@ -560,7 +482,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   onChange={(e) => handleBooleanChange('payTechSpecificBonus', e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <label htmlFor="payTechSpecificBonus" className="ml-2 block text-sm text-gray-900">
+                <label htmlFor="payTechSpecificBonus" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                   Pay Tech-Specific Bonus
                 </label>
               </div>
@@ -572,7 +494,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
                   onChange={(e) => handleBooleanChange('paysCommission', e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <label htmlFor="paysCommission" className="ml-2 block text-sm text-gray-900">
+                <label htmlFor="paysCommission" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                   Pays Commission
                 </label>
               </div>
@@ -591,12 +513,13 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
         </button>
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || isSaving}
           className="inline-flex justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
         >
-          {isSubmitting ? 'Saving...' : 'Save'}
+          {(isSubmitting || isSaving) ? 'Saving...' : 'Save'}
         </button>
       </div>
+      {error && <div className="mt-2 text-red-600 text-sm">{error}</div>}
     </form>
   );
 };

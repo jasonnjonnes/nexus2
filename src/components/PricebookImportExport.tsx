@@ -1,11 +1,17 @@
-import React, { useState, ChangeEvent } from 'react';
+import React, { useState, ChangeEvent, useEffect } from 'react';
 import { X, Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle } from 'lucide-react';
-import { parseFile, generateTemplate, mapImportedData, ImportedItem } from '../utils/pricebookImport';
+import { parseFile, generateTemplate, mapImportedData, ImportedItem, processServiceTitanServicesSheet, processServiceTitanMaterialsSheet, processServiceTitanEquipmentSheet, processServiceMaterialLinksSheet, processServiceEquipmentLinksSheet, processEquipmentMaterialLinksSheet } from '../utils/pricebookImport';
+import * as XLSX from 'xlsx';
 
 export interface PricebookImportExportProps {
   isOpen: boolean;
   onClose: () => void;
   onImportComplete?: (data: ImportedItem[]) => void;
+  importSource?: string | null;
+  initialStep?: 'upload' | 'map' | 'preview' | 'upload-materials' | 'preview-materials';
+  onNext?: (data: ImportedItem[]) => void;
+  isEquipmentImport?: boolean;
+  linkImportType?: 'service-material' | 'service-equipment' | 'equipment-material';
 }
 
 const destinationFields = [
@@ -136,8 +142,13 @@ function automapFields(incoming: string[], destination: string[]): { [key: strin
   return mapping;
 }
 
-const PricebookImportExport: React.FC<PricebookImportExportProps> = ({ isOpen, onClose, onImportComplete }) => {
-  const [step, setStep] = useState<'upload' | 'map' | 'preview'>('upload');
+const SERVICETITAN_FIELDS = [
+  'categories', 'id', 'code', 'name', 'description', 'warrantyDescription', 'useStaticPrice', 'dynamicPrice', 'staticPrice', 'staticMemberPrice', 'staticAddOnPrice', 'staticMemberAddOnPrice', 'generalLedgerAccount', 'expenseAccount', 'recommendations', 'paysCommission', 'paySpecificTechBonus', 'taxable', 'laborService', 'hours', 'estimatedLaborCost', 'allowDiscounts', 'allowMembershipDiscounts', 'dollarBonus', 'bonusPercentage', 'active', 'materialCost', 'materialCount'
+];
+
+const PricebookImportExport: React.FC<PricebookImportExportProps> = ({ isOpen, onClose, onImportComplete, importSource, initialStep, onNext, isEquipmentImport, linkImportType }) => {
+  console.log('PricebookImportExport initialStep:', initialStep);
+  const [step, setStep] = useState<'upload' | 'map' | 'preview' | 'upload-materials' | 'preview-materials'>(initialStep || 'upload');
   const [file, setFile] = useState<File | null>(null);
   const [incomingFields, setIncomingFields] = useState<string[]>([]);
   const [fieldMaps, setFieldMaps] = useState<{ [sheet: string]: { [key: string]: string } }>({});
@@ -148,9 +159,12 @@ const PricebookImportExport: React.FC<PricebookImportExportProps> = ({ isOpen, o
   const [importSuccess, setImportSuccess] = useState(false);
   const [allSheets, setAllSheets] = useState<{ [sheet: string]: { headers: string[]; data: any[] } }>({});
   const [selectedSheet, setSelectedSheet] = useState<string>('');
+  const [showManualMap, setShowManualMap] = useState(false);
+  const [serviceTitanPreview, setServiceTitanPreview] = useState<any[]>([]);
+  const [materialPreview, setMaterialPreview] = useState<any[]>([]);
 
   const resetState = () => {
-    setStep('upload');
+    setStep(initialStep || 'upload');
     setFile(null);
     setIncomingFields([]);
     setFieldMaps({});
@@ -164,6 +178,15 @@ const PricebookImportExport: React.FC<PricebookImportExportProps> = ({ isOpen, o
     resetState();
     onClose();
   };
+
+  useEffect(() => {
+    console.log('PricebookImportExport step:', step);
+    if (isOpen) {
+      setStep(initialStep || 'upload');
+      resetState();
+    }
+    // eslint-disable-next-line
+  }, [isOpen, initialStep]);
 
   // Handle file upload and parsing
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -237,6 +260,132 @@ const PricebookImportExport: React.FC<PricebookImportExportProps> = ({ isOpen, o
     setStep('preview');
   };
 
+  const handleServiceTitanFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsLoading(true);
+    setErrors([]);
+    setFile(file);
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = await XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets['Services'];
+      if (!sheet) {
+        setErrors(['No Services sheet found!']);
+        setIsLoading(false);
+        return;
+      }
+      const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as unknown[][];
+      const headers: string[] = (rawData[0] as unknown[]).map((cell: unknown) => String(cell || ''));
+      const rows: any[][] = rawData.slice(1) as any[][];
+      const processed = processServiceTitanServicesSheet(rows.map(row => Object.fromEntries(headers.map((h, i) => [h, row[i]]))));
+      setServiceTitanPreview(processed);
+      setStep('preview');
+    } catch (error) {
+      setErrors(['Failed to parse file.']);
+    }
+    setIsLoading(false);
+  };
+
+  const handleServiceTitanMaterialFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsLoading(true);
+    setErrors([]);
+    setFile(file);
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = await XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets['Materials'];
+      if (!sheet) {
+        setErrors(['No Materials sheet found!']);
+        setIsLoading(false);
+        return;
+      }
+      const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as unknown[][];
+      const headers: string[] = (rawData[0] as unknown[]).map((cell: unknown) => String(cell || ''));
+      const rows: any[][] = rawData.slice(1) as any[][];
+      const processed = processServiceTitanMaterialsSheet(rows.map(row => Object.fromEntries(headers.map((h, i) => [h, row[i]]))));
+      setMaterialPreview(processed);
+      setStep('preview-materials');
+    } catch (error) {
+      setErrors(['Failed to parse file.']);
+    }
+    setIsLoading(false);
+  };
+
+  const handleServiceTitanEquipmentFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsLoading(true);
+    setErrors([]);
+    setFile(file);
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = await XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets['Equipment'];
+      if (!sheet) {
+        setErrors(['No Equipment sheet found!']);
+        setIsLoading(false);
+        return;
+      }
+      // Build service category map from Categories sheet
+      const categoriesSheet = workbook.Sheets['Categories'] || workbook.Sheets['Category'];
+      let serviceCategoryMap: { [id: string]: boolean } = {};
+      if (categoriesSheet) {
+        const rawData = XLSX.utils.sheet_to_json(categoriesSheet, { header: 1, defval: null }) as unknown[][];
+        const headers: string[] = (rawData[0] as unknown[]).map((cell: unknown) => String(cell || ''));
+        const rows: any[][] = rawData.slice(1) as any[][];
+        const idIndex = headers.findIndex(h => h && h.trim().toLowerCase() === 'id' || h && h.trim().toLowerCase() === 'category id');
+        const typeIndex = headers.findIndex(h => h && h.trim().toLowerCase() === 'type' || h && h.trim().toLowerCase() === 'categorytype');
+        if (idIndex !== -1 && typeIndex !== -1) {
+          rows.forEach(row => {
+            const id = String(row[idIndex]).trim();
+            const type = String(row[typeIndex]).trim().toLowerCase();
+            if (id && type === 'service') serviceCategoryMap[id] = true;
+          });
+        }
+      }
+      const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as unknown[][];
+      const headers: string[] = (rawData[0] as unknown[]).map((cell: unknown) => String(cell || ''));
+      const rows: any[][] = rawData.slice(1) as any[][];
+      // Debug: log the map and each equipment row's category id
+      rows.forEach(row => {
+        const rawCategoryId = String(row[headers.findIndex(h => h.toLowerCase() === 'category.id' || h.toLowerCase() === 'categoryid' || h.toLowerCase() === 'category id')] || '').trim();
+        console.log('Equipment row Category.Id:', rawCategoryId, 'Map has:', serviceCategoryMap[rawCategoryId], 'Full map:', serviceCategoryMap);
+      });
+      const processed = processServiceTitanEquipmentSheet(
+        rows.map(row => Object.fromEntries(headers.map((h, i) => [h, row[i]])))
+      );
+      setMaterialPreview(processed);
+      setStep('preview-materials');
+    } catch (error) {
+      setErrors(['Failed to parse file.']);
+    }
+    setIsLoading(false);
+  };
+
+  // --- LINK IMPORT LOGIC ---
+  useEffect(() => {
+    if (linkImportType && file && step === 'upload') {
+      setIsLoading(true);
+      parseFile(file).then((sheets: any) => {
+        let processed: any[] = [];
+        if (linkImportType === 'service-material') {
+          processed = processServiceMaterialLinksSheet(sheets['ServiceMaterialLinks']?.data || []);
+        } else if (linkImportType === 'service-equipment') {
+          processed = processServiceEquipmentLinksSheet(sheets['ServiceEquipmentLinks']?.data || []);
+        } else if (linkImportType === 'equipment-material') {
+          processed = processEquipmentMaterialLinksSheet(sheets['EquipmentMaterialLinks']?.data || []);
+        }
+        setParsedData(processed);
+        setStep('preview');
+        setIsLoading(false);
+      }).catch(() => setIsLoading(false));
+    }
+    // eslint-disable-next-line
+  }, [linkImportType, file, step]);
+
   if (!isOpen) return null;
 
   return (
@@ -301,36 +450,23 @@ const PricebookImportExport: React.FC<PricebookImportExportProps> = ({ isOpen, o
             </div>
           )}
 
-          {/* File Upload */}
-          {step === 'upload' && (
+          {/* File Upload (always render for ServiceTitan step 3) */}
+          {importSource === 'servicetitan' && (step === 'upload' || step === 'preview') && (
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Upload XLSX or CSV
+                Upload XLSX
               </label>
               <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 dark:border-slate-600 border-dashed rounded-lg">
                 <div className="space-y-1 text-center">
                   <Upload className="mx-auto h-12 w-12 text-gray-400" />
                   <div className="flex text-sm text-gray-600 dark:text-gray-400">
-                    <label
-                      htmlFor="file-upload"
-                      className="relative cursor-pointer bg-white dark:bg-slate-800 rounded-md font-medium text-blue-600 dark:text-blue-400 hover:text-blue-500 focus-within:outline-none"
-                    >
+                    <label htmlFor="file-upload" className="relative cursor-pointer bg-white dark:bg-slate-800 rounded-md font-medium text-blue-600 dark:text-blue-400 hover:text-blue-500 focus-within:outline-none">
                       <span>Upload a file</span>
-                      <input
-                        id="file-upload"
-                        name="file-upload"
-                        type="file"
-                        className="sr-only"
-                        accept=".xlsx,.csv"
-                        onChange={handleFileUpload}
-                        disabled={isLoading}
-                      />
+                      <input id="file-upload" name="file-upload" type="file" className="sr-only" accept=".xlsx" onChange={handleServiceTitanFileUpload} disabled={isLoading} />
                     </label>
                     <p className="pl-1">or drag and drop</p>
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    XLSX or CSV up to 10MB
-                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">XLSX up to 10MB</p>
                 </div>
               </div>
             </div>
@@ -352,15 +488,23 @@ const PricebookImportExport: React.FC<PricebookImportExportProps> = ({ isOpen, o
                           className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                         >
                           <option value="">-- Select Field --</option>
-                          {destinationFields.map(destField => (
-                            <option
-                              key={destField}
-                              value={destField}
-                              disabled={Object.values(fieldMaps['ALL'] || {}).includes(destField) && fieldMaps['ALL'][field] !== destField}
-                            >
-                              {destField}
-                            </option>
-                          ))}
+                          {destinationFields.map(destField => {
+                            // Only allow a destination field to be selected if:
+                            // 1. It is not already mapped to another source field, or
+                            // 2. It is currently mapped to this source field
+                            const isMappedElsewhere = Object.entries(fieldMaps['ALL'] || {}).some(
+                              ([src, dst]) => dst === destField && src !== field
+                            );
+                            return (
+                              <option
+                                key={destField}
+                                value={destField}
+                                disabled={isMappedElsewhere}
+                              >
+                                {destField}
+                              </option>
+                            );
+                          })}
                         </select>
                         <span className="text-sm text-gray-600 dark:text-gray-400">{field}</span>
                       </div>
@@ -406,62 +550,163 @@ const PricebookImportExport: React.FC<PricebookImportExportProps> = ({ isOpen, o
           )}
 
           {/* Preview */}
-          {step === 'preview' && (
+          {importSource === 'servicetitan' && step === 'preview' && (
             <div>
-              <h3 className="text-lg font-semibold mb-4">Preview Import</h3>
+              <div className="mb-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800">
+                Something not look quite right?{' '}
+                <button className="underline text-blue-600" onClick={() => setShowManualMap(true)}>
+                  Click here to manually map.
+                </button>
+              </div>
               <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-4 overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-600">
                   <thead>
                     <tr>
-                      {destinationFields
-                        .filter(field => Object.values(fieldMaps['ALL'] || {}).includes(field))
-                        .map(field => (
-                        <th
-                          key={field}
-                          className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
-                        >
-                          {field}
+                      {SERVICETITAN_FIELDS.map(field => (
+                        <th key={field} className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          {field === 'categories' ? 'CATEGORIES' : field.toUpperCase()}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-slate-600">
-                    {mappedData.slice(0, 5).map((row, rowIndex) => (
+                    {serviceTitanPreview.slice(0, 5).map((row, rowIndex) => (
                       <tr key={rowIndex}>
-                        {destinationFields
-                          .filter(field => Object.values(fieldMaps['ALL'] || {}).includes(field))
-                          .map(destField => (
-                          <td
-                            key={`${rowIndex}-${destField}`}
-                            className="px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-                          >
-                            {String(row[destField] ?? '')}
+                        {SERVICETITAN_FIELDS.map(destField => (
+                          <td key={`${rowIndex}-${destField}`} className="px-3 py-2 text-sm text-gray-900 dark:text-gray-100">
+                            {destField === 'categories'
+                              ? (Array.isArray(row.categories) && row.categories.length > 0
+                                  ? row.categories.join(', ')
+                                  : '—')
+                              : String(row[destField] ?? '')}
                           </td>
                         ))}
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {mappedData.length > 5 && (
-                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                    Showing 5 of {mappedData.length} rows
-                  </p>
+                {serviceTitanPreview.length > 5 && (
+                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Showing 5 of {serviceTitanPreview.length} rows</p>
                 )}
               </div>
               <div className="mt-6 flex justify-end space-x-3">
-                <button
-                  onClick={() => setStep('map')}
-                  className="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700"
-                >
-                  Back
+                <button onClick={() => setStep('upload')} className="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700">Back</button>
+                <button onClick={() => onNext?.(serviceTitanPreview)} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700" disabled={isLoading}>Next</button>
+              </div>
+              {showManualMap && (
+                <div className="mt-8">
+                  {/* Mapping UI for only allowed fields */}
+                  <h3 className="text-lg font-semibold mb-4">Manual Field Mapping (ServiceTitan Only)</h3>
+                  {/* ...implement mapping UI for SERVICETITAN_FIELDS only... */}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* File Upload for Materials (ServiceTitan step 4) */}
+          {importSource === 'servicetitan' && step === 'upload-materials' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Upload XLSX ({isEquipmentImport ? 'Equipment' : 'Materials'})
+              </label>
+              <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 dark:border-slate-600 border-dashed rounded-lg">
+                <div className="space-y-1 text-center">
+                  <Upload className="mx-auto h-12 w-12 text-gray-400" />
+                  <div className="flex text-sm text-gray-600 dark:text-gray-400">
+                    <label htmlFor="file-upload-materials" className="relative cursor-pointer bg-white dark:bg-slate-800 rounded-md font-medium text-blue-600 dark:text-blue-400 hover:text-blue-500 focus-within:outline-none">
+                      <span>Upload a file</span>
+                      <input id="file-upload-materials" name="file-upload-materials" type="file" className="sr-only" accept=".xlsx" onChange={isEquipmentImport ? handleServiceTitanEquipmentFileUpload : handleServiceTitanMaterialFileUpload} disabled={isLoading} />
+                    </label>
+                    <p className="pl-1">or drag and drop</p>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">XLSX up to 10MB</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Preview for Materials (ServiceTitan step 4) */}
+          {importSource === 'servicetitan' && step === 'preview-materials' && (
+            <div>
+              <div className="mb-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800">
+                Something not look quite right?{' '}
+                <button className="underline text-blue-600" onClick={() => setShowManualMap(true)}>
+                  Click here to manually map.
                 </button>
-                <button
-                  onClick={handleImport}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                  disabled={isLoading}
-                >
-                  {isLoading ? 'Importing...' : 'Import'}
-                </button>
+              </div>
+              <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-4 overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-600">
+                  <thead>
+                    <tr>
+                      {Object.keys(materialPreview[0] || {}).map(field => (
+                        <th key={field} className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{field}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-slate-600">
+                    {materialPreview.slice(0, 5).map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {Object.keys(materialPreview[0] || {}).map(destField => (
+                          <td key={`${rowIndex}-${destField}`} className="px-3 py-2 text-sm text-gray-900 dark:text-gray-100">{typeof row[destField] === 'object' ? JSON.stringify(row[destField]) : String(row[destField] ?? '')}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {materialPreview.length > 5 && (
+                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Showing 5 of {materialPreview.length} rows</p>
+                )}
+              </div>
+              <div className="mt-6 flex justify-end space-x-3">
+                <button onClick={() => setStep('upload-materials')} className="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700">Back</button>
+                <button onClick={() => onNext?.(materialPreview)} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700" disabled={isLoading}>Next</button>
+              </div>
+              {showManualMap && (
+                <div className="mt-8">
+                  {/* Mapping UI for only allowed fields */}
+                  <h3 className="text-lg font-semibold mb-4">Manual Field Mapping (ServiceTitan Materials Only)</h3>
+                  {/* ...implement mapping UI for material fields only... */}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* LINK IMPORT UI */}
+          {linkImportType && (
+            <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+              <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 w-full max-w-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-bold">Import {linkImportType === 'service-material' ? 'Service-Material' : linkImportType === 'service-equipment' ? 'Service-Equipment' : 'Equipment-Material'} Links</h2>
+                  <button onClick={onClose} className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded"><X size={18} /></button>
+                </div>
+                {step === 'upload' && (
+                  <div>
+                    <input type="file" accept=".xlsx,.xls,.csv" onChange={e => setFile(e.target.files?.[0] || null)} className="mb-4" />
+                    <button disabled={!file} onClick={() => setStep('preview')} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">Next</button>
+                  </div>
+                )}
+                {step === 'preview' && (
+                  <div>
+                    <div className="mb-4 max-h-64 overflow-auto">
+                      <table className="min-w-full text-xs">
+                        <thead>
+                          <tr>
+                            {parsedData[0] && Object.keys(parsedData[0]).map(h => <th key={h} className="px-2 py-1 text-left font-semibold">{h}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {parsedData.map((row, i) => (
+                            <tr key={i} className="border-t">
+                              {Object.values(row).map((v, j) => <td key={j} className="px-2 py-1">{String(v)}</td>)}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button onClick={() => { onImportComplete?.(parsedData); onNext?.(parsedData); onClose(); }} className="px-4 py-2 bg-green-600 text-white rounded">Confirm & Import</button>
+                    <button onClick={onClose} className="ml-2 px-4 py-2 border rounded">Cancel</button>
+                  </div>
+                )}
               </div>
             </div>
           )}

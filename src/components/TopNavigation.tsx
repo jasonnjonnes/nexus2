@@ -17,14 +17,14 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ toggleSidebar, theme, tog
   const navigate = useNavigate();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   
-  const navLinkClasses = ({ isActive }) => 
+  const navLinkClasses = ({ isActive }: { isActive: boolean }) => 
     `flex items-center px-3 py-4 text-sm font-medium transition-colors duration-150 ${
       isActive 
         ? 'text-blue-500 dark:text-blue-400 border-b-2 border-blue-500 dark:border-blue-400' 
         : 'text-gray-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white'
     }`;
   
-  const mobileNavLinkClasses = ({ isActive }) => 
+  const mobileNavLinkClasses = ({ isActive }: { isActive: boolean }) => 
     `flex flex-col items-center px-3 py-1 text-xs font-medium transition-colors duration-150 ${
       isActive 
         ? 'text-blue-500 dark:text-blue-400' 
@@ -39,7 +39,7 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ toggleSidebar, theme, tog
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <img 
-                src="/nexusfavicon.svg" 
+                src="/Nexus.svg" 
                 alt="Nexus" 
                 className="h-8 w-auto transition-all duration-300 dark:brightness-0 dark:invert" 
               />

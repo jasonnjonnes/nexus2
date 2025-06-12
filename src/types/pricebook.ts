@@ -40,9 +40,6 @@ export interface Service extends BasePricebookItem {
   // Pricing
   useStaticPrice: boolean;
   staticPrice: number;
-  staticMemberPrice: number;
-  staticAddOnPrice: number;
-  staticMemberAddOnPrice: number;
   useDynamicPricing: boolean;
   hours: number;
   estimatedLaborCost: number;
@@ -54,7 +51,7 @@ export interface Service extends BasePricebookItem {
   excludeFromPricebookWizard: boolean;
   
   // Accounting
-  crossSaleGroup: string;
+  crossSaleGroup: string[];
   generalLedgerAccount: string;
   expenseAccount: string;
   
@@ -74,6 +71,15 @@ export interface Service extends BasePricebookItem {
   bonusPercentage: number;
   payTechSpecificBonus: boolean;
   paysCommission: boolean;
+  
+  // NEW: $ Bonus
+  dollarBonus: number;
+  
+  // NEW: MaterialCost
+  materialCost: number;
+  
+  // NEW: DistinctMaterialCount
+  materialCount: number;
 }
 
 // Material interfaces
@@ -87,6 +93,26 @@ export interface Material extends BasePricebookItem {
   excludeFromPricebookWizard: boolean;
   linkedEquipment: string[];
   notes: string;
+  generalLedgerAccount: string;
+  expenseAccount: string;
+  images: ServiceImage[];
+  taxable: boolean;
+  allowMembershipDiscounts: boolean;
+  crossSaleGroup: string[];
+  DeductAsJobCost: boolean;
+  PaysSoldByRate: boolean;
+  PaysFlatAmount: boolean;
+  ScheduledFlatAmount: boolean;
+  AddOnFlatAmount: boolean;
+  PayTechSpecificBonus: boolean;
+  vendors: Array<{
+    name: string;
+    active: boolean;
+    partNumber: string;
+    memo: string;
+    price: string;
+    primaryVendor: boolean;
+  }>;
 }
 
 // Equipment interfaces
@@ -99,6 +125,7 @@ export interface Equipment extends BasePricebookItem {
   lastServiceDate: Timestamp | null;
   nextServiceDate: Timestamp | null;
   notes: string;
+  linkedMaterials: string[];
 }
 
 // Media interfaces
@@ -170,10 +197,10 @@ export interface ServiceFormState {
   categories: string[];
   assignedCategories: string[];
   linkedMaterials: string[];
-  linkedEquipment?: string[];
-  upgrades?: string[];
-  recommendations?: string[];
-  videos?: ServiceVideo[];
+  linkedEquipment: string[];
+  upgrades: string[];
+  recommendations: string[];
+  videos: ServiceVideo[];
   useDynamicPricing: boolean;
   staticPrice: number;
   hours: number;
@@ -185,8 +212,6 @@ export interface ServiceFormState {
   paysCommission: boolean;
   active: boolean;
   images: ServiceImage[];
-  serviceTitanId: string;
-  staticMemberPrice: number;
   generalLedgerAccount: string;
   expenseAccount: string;
   taxable: boolean;
@@ -195,20 +220,36 @@ export interface ServiceFormState {
   conversionTags: string[];
   warrantyDescription: string;
   useStaticPrice: boolean;
-  staticAddOnPrice: number;
-  staticMemberAddOnPrice: number;
   estimatedLaborCost: number;
   allowMembershipDiscounts: boolean;
   excludeFromPricebookWizard: boolean;
-  crossSaleGroup: string;
-  serviceTitanCategoryId: string;
-  serviceTitanSubCategoryId: string;
-  serviceTitanEquipmentId: string;
-  serviceTitanWarrantyId: string;
+  crossSaleGroup: string[];
+  dollarBonus: number;
+  materialCost: number;
+  materialCount: number;
 }
 
-export interface MaterialFormState extends Omit<Material, 'id' | 'userId' | 'createdAt' | 'updatedAt'> {
-  id?: string;
+export interface MaterialFormState {
+  code: string;
+  name: string;
+  description: string;
+  vendor: string;
+  vendorPartNumber: string;
+  cost: number;
+  price: number;
+  markup: number;
+  unit: string;
+  taxable: boolean;
+  active: boolean;
+  categories: string[];
+  images: ServiceImage[];
+  notes: string;
+  excludeFromPricebookWizard: boolean;
+  linkedEquipment: string[];
+  allowMembershipDiscounts: boolean;
+  crossSaleGroup: string[];
+  generalLedgerAccount: string;
+  expenseAccount: string;
 }
 
 export interface CategoryFormState {
@@ -263,9 +304,6 @@ export interface ServiceTitanBaseItem {
   categoryId: string;
   useStaticPrice: boolean;
   staticPrice: number;
-  staticMemberPrice: number;
-  staticAddOnPrice: number;
-  staticMemberAddOnPrice: number;
   excludeFromPricebookWizard: boolean;
   active: boolean;
 }
@@ -278,7 +316,7 @@ export interface ServiceTitanService extends ServiceTitanBaseItem {
   taxable: boolean;
   hours: number;
   estimatedLaborCost: number;
-  crossSaleGroup: string;
+  crossSaleGroup: string[];
   generalLedgerAccount: string;
   expenseAccount: string;
   linkedMaterials: string[];
@@ -324,41 +362,67 @@ export interface MaterialImage {
   uploadedAt: string;
 }
 
-export interface MaterialFormState {
+export interface GLAccount {
+  id: string;
+  accountNumber: string;
+  accountName: string;
+  type: 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense' | 'Other';
+  subtype: string;
+  description: string;
+  active: boolean;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface EquipmentFormState {
   code: string;
   name: string;
   description: string;
-  vendor: string;
-  vendorPartNumber: string;
+  categoryId: string;
+  categories: string[];
+  type: string;
+  account: string;
+  costOfSaleAccount: string;
+  assetAccount: string;
+  crossSaleGroup: string;
+  upgrades: string;
+  recommendationsServices: string;
+  recommendationsMaterials: string;
+  dollarBonus: number;
+  paysCommission: boolean;
+  bonusPercentage: number;
+  hours: number;
+  payTechSpecificBonus: boolean;
+  isConfigurable: boolean;
+  taxable: boolean;
+  brand: string;
+  manufacturer: string;
+  model: string;
   cost: number;
   price: number;
-  markup: number;
-  unit: string;
-  taxable: boolean;
-  active: boolean;
-  categories: CategoryId[];
-  images: ServiceImage[];
-  notes: string;
-  excludeFromPricebookWizard: boolean;
-  linkedEquipment: string[];
-  serviceTitanId: string;
-  serviceTitanCategoryId: string;
-  serviceTitanSubCategoryId: string;
-  serviceTitanEquipmentId: string;
-  serviceTitanWarrantyId: string;
+  memberPrice: number;
+  addOnPrice: number;
+  addOnMemberPrice: number;
+  unitOfMeasure: string;
+  allowDiscounts: boolean;
   allowMembershipDiscounts: boolean;
-  crossSaleGroup: string;
-}
-
-export interface CategoryFormState {
-  name: string;
-  description: string;
-  type: 'service' | 'material' | 'equipment';
-  parentId: string | null;
-  priceRuleId: string | null;
+  manufacturerWarrantyDuration: string;
+  manufacturerWarrantyDescription: string;
+  serviceProviderWarrantyDuration: string;
+  serviceProviderWarrantyDescription: string;
+  dimensionsH: string;
+  dimensionsW: string;
+  dimensionsD: string;
   active: boolean;
-  serviceTitanId: string;
-  serviceTitanParentId: string | null;
-  serviceTitanPath?: string;
-  isExcludedFromPricebookWizard?: boolean;
+  replenishment: boolean;
+  vendors: Array<{
+    name: string;
+    active: boolean;
+    partNumber: string;
+    memo: string;
+    price: string;
+    primaryVendor: boolean;
+  }>;
+  notes: string;
+  linkedMaterials: string[];
 } 

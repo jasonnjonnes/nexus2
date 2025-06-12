@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Plus, Trash2, Calculator } from 'lucide-react';
 import { PriceRule, PriceRuleForm, MarkupTier } from '../types/pricebook';
+import CategoryTreeSelector from './CategoryTreeSelector';
 
 interface Category { id: string; name: string; }
 interface Service { id: string; name: string; }
@@ -65,6 +66,30 @@ const PriceRuleModal: React.FC<PriceRuleModalProps> = ({
   const [sampleDuration, setSampleDuration] = useState(1);
   const [sampleMaterialCost, setSampleMaterialCost] = useState(100);
   const [samplePriority, setSamplePriority] = useState<'normal' | 'afterHours' | 'emergency'>('normal');
+
+  useEffect(() => {
+    if (isOpen) {
+      setForm({ ...defaultForm, ...(priceRule ? {
+        name: priceRule.name,
+        description: priceRule.description,
+        baseRate: priceRule.baseRate,
+        afterHoursMultiplier: priceRule.afterHoursMultiplier,
+        emergencyMultiplier: priceRule.emergencyMultiplier,
+        weekendSurcharge: priceRule.weekendSurcharge,
+        holidaySurcharge: priceRule.holidaySurcharge,
+        afterHoursSurcharge: priceRule.afterHoursSurcharge,
+        minimumCharge: priceRule.minimumCharge,
+        travelTime: priceRule.travelTime,
+        mileageRate: priceRule.mileageRate,
+        materialMarkup: priceRule.materialMarkup,
+        laborMarkup: priceRule.laborMarkup,
+        markupTiers: priceRule.markupTiers,
+        assignedCategories: priceRule.assignedCategories,
+        assignedServices: priceRule.assignedServices,
+        active: priceRule.active,
+      } : {}) });
+    }
+  }, [isOpen, priceRule]);
 
   // Tiered markup calculation
   const getMarkupPercent = (cost: number) => {
@@ -288,23 +313,21 @@ const PriceRuleModal: React.FC<PriceRuleModalProps> = ({
           {/* Assign to Categories/Services */}
           <div className="border-t border-gray-200 dark:border-slate-700 pt-6 mt-6">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Assign to Categories</label>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {categories.map(cat => (
-                <label key={cat.id} className="flex items-center gap-1">
-                  <input type="checkbox" checked={form.assignedCategories.includes(cat.id)} onChange={() => handleAssignCategory(cat.id)} />
-                  <span className="text-xs text-gray-700 dark:text-gray-300">{cat.name}</span>
-                </label>
-              ))}
-            </div>
+            <CategoryTreeSelector
+              categories={categories}
+              selected={form.assignedCategories}
+              onChange={ids => setForm(prev => ({ ...prev, assignedCategories: ids }))}
+            />
+            <p className="text-xs text-gray-500 mt-1">Selecting a parent category will select all its children by default. You can manually deselect any child category.</p>
+          </div>
+          <div className="border-t border-gray-200 dark:border-slate-700 pt-6 mt-6">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Assign to Services</label>
-            <div className="flex flex-wrap gap-2">
-              {services.map(svc => (
-                <label key={svc.id} className="flex items-center gap-1">
-                  <input type="checkbox" checked={form.assignedServices.includes(svc.id)} onChange={() => handleAssignService(svc.id)} />
-                  <span className="text-xs text-gray-700 dark:text-gray-300">{svc.name}</span>
-                </label>
-              ))}
-            </div>
+            <ServiceMultiSelect
+              services={services}
+              selected={form.assignedServices}
+              onChange={ids => setForm(prev => ({ ...prev, assignedServices: ids }))}
+            />
+            <p className="text-xs text-gray-500 mt-1">Search and select services. Selected services appear as tags below.</p>
           </div>
           <div className="flex justify-end space-x-2 mt-6">
             <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
@@ -312,6 +335,100 @@ const PriceRuleModal: React.FC<PriceRuleModalProps> = ({
           </div>
         </div>
       </div>
+    </div>
+  );
+};
+
+const ServiceMultiSelect: React.FC<{
+  services: { id: string; name: string }[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}> = ({ services, selected, onChange }) => {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const inputRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (inputRef.current && !inputRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    if (dropdownOpen) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [dropdownOpen]);
+
+  const handleCheck = (id: string, checked: boolean) => {
+    if (checked) {
+      onChange(Array.from(new Set([...selected, id])));
+    } else {
+      onChange(selected.filter(selId => selId !== id));
+    }
+  };
+
+  const handleRemove = (id: string) => {
+    onChange(selected.filter(selId => selId !== id));
+  };
+
+  const selectedSvcs = selected
+    .map(id => services.find(s => s.id === id))
+    .filter((svc): svc is { id: string; name: string } => Boolean(svc));
+
+  const filteredServices = services.filter(svc =>
+    svc.name.toLowerCase().includes(search.toLowerCase()) || selected.includes(svc.id)
+  );
+
+  return (
+    <div className="relative" ref={inputRef}>
+      <div
+        className="flex flex-wrap items-center gap-1 min-h-[38px] border rounded px-2 py-1 bg-white dark:bg-slate-800 cursor-pointer"
+        onClick={() => setDropdownOpen(v => !v)}
+        tabIndex={0}
+        role="button"
+      >
+        {selectedSvcs.length === 0 && <span className="text-gray-400">Select services...</span>}
+        {selectedSvcs.map(svc => (
+          <span key={svc.id} className="flex items-center bg-blue-100 text-blue-800 rounded px-2 py-0.5 text-xs mr-1 mb-1">
+            {svc.name}
+            <button
+              type="button"
+              className="ml-1 text-blue-600 hover:text-red-600"
+              onClick={e => { e.stopPropagation(); handleRemove(svc.id); }}
+              aria-label="Remove service"
+            >
+              <X size={12} />
+            </button>
+          </span>
+        ))}
+      </div>
+      {dropdownOpen && (
+        <div className="absolute z-50 mt-1 w-full bg-white dark:bg-slate-800 border rounded shadow-lg max-h-72 overflow-y-auto">
+          <div className="sticky top-0 bg-white dark:bg-slate-800 p-2 border-b flex items-center">
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search services..."
+              className="w-full bg-transparent outline-none text-sm"
+              autoFocus
+            />
+          </div>
+          <div className="p-2">
+            {filteredServices.map(svc => (
+              <label key={svc.id} className="flex items-center gap-2 mb-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(svc.id)}
+                  onChange={e => handleCheck(svc.id, e.target.checked)}
+                  className="mr-2"
+                />
+                <span className="text-sm">{svc.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

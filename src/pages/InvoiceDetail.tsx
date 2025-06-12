@@ -12,19 +12,11 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
 // Helper functions
-const formatCurrency = (amount) => `$${amount != null ? amount.toFixed(2) : '0.00'}`;
-const formatDate = (dateString) => {
-  if (!dateString) return 'N/A';
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { 
-    year: 'numeric', 
-    month: 'short', 
-    day: 'numeric' 
-  });
-};
+const formatCurrency = (amount: number | undefined | null): string => `$${amount != null ? amount.toFixed(2) : '0.00'}`;
+const formatDate = (dateString: string | undefined | null): string => dateString ? new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A';
 
 // Default business unit data fallback
-const getBusinessUnitFallback = (invoice, companyProfile) => ({
+const getBusinessUnitFallback = (invoice: any, companyProfile: any) => ({
   displayName: companyProfile?.companyName || invoice?.businessUnitName || 'Your Business',
   businessUnitName: companyProfile?.companyName || invoice?.businessUnitName || 'Your Business',
   logo: companyProfile?.logo || null,
@@ -41,7 +33,7 @@ const getBusinessUnitFallback = (invoice, companyProfile) => ({
 });
 
 // Send Modal Component
-const SendInvoiceModal = ({ isOpen, onClose, invoice, onSend }) => {
+const SendInvoiceModal = ({ isOpen, onClose, invoice, onSend }: { isOpen: boolean; onClose: () => void; invoice: any; onSend: () => void }) => {
   const [selectedMethod, setSelectedMethod] = useState('email');
   const [selectedContact, setSelectedContact] = useState('');
   const [customContact, setCustomContact] = useState('');
@@ -215,7 +207,7 @@ const SendInvoiceModal = ({ isOpen, onClose, invoice, onSend }) => {
 };
 
 // Updated Professional Invoice Template Component
-const InvoiceTemplate = ({ invoice, businessUnit, companyProfile, customer }) => {
+const InvoiceTemplate = ({ invoice, businessUnit, companyProfile, customer }: { invoice: any; businessUnit: any; companyProfile: any; customer: any }) => {
   if (!invoice) return <div className="p-8 text-center text-gray-500">Loading invoice...</div>;
 
   // Use business unit data for company info, customer data for bill-to info
@@ -408,7 +400,7 @@ const InvoiceTemplate = ({ invoice, businessUnit, companyProfile, customer }) =>
             DESCRIPTION OF WORK
           </h3>
           <div className="text-gray-800 text-center bg-gray-50 p-4 rounded">
-            {invoice.description || invoice.summary}
+            <div dangerouslySetInnerHTML={{ __html: invoice.description || invoice.summary }} />
           </div>
         </div>
       )}
@@ -431,7 +423,7 @@ const InvoiceTemplate = ({ invoice, businessUnit, companyProfile, customer }) =>
                   <td className="py-3 px-4">
                     <div className="font-medium text-gray-900">{service.name}</div>
                     {service.description && (
-                      <div className="text-sm text-gray-600 mt-1">{service.description}</div>
+                      <div className="text-sm text-gray-600 mt-1" dangerouslySetInnerHTML={{ __html: service.description }} />
                     )}
                   </td>
                   <td className="py-3 px-4 text-center text-gray-900">{service.quantity}</td>
@@ -447,7 +439,7 @@ const InvoiceTemplate = ({ invoice, businessUnit, companyProfile, customer }) =>
                   <td className="py-3 px-4">
                     <div className="font-medium text-gray-900">{material.name}</div>
                     {material.description && (
-                      <div className="text-sm text-gray-600 mt-1">{material.description}</div>
+                      <div className="text-sm text-gray-600 mt-1" dangerouslySetInnerHTML={{ __html: material.description }} />
                     )}
                   </td>
                   <td className="py-3 px-4 text-center text-gray-900">{material.quantity}</td>

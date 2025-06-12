@@ -756,4 +756,244 @@ export function parseServiceTitanCategoryHierarchy(rows: any[][], headers: strin
     categories.push({ id, name, parentId, level: level - 1, path });
   }
   return categories;
+}
+
+// Add a new function to process the 'Services' sheet for ServiceTitan import
+export function processServiceTitanServicesSheet(sheetData: any[]): any[] {
+  return sheetData.map(row => {
+    // Map and transform fields
+    const rawCategoryId = row['Category.Id'] || row['CategoryID'] || row['Category ID'] || '';
+    let categories: string[] = [];
+    if (rawCategoryId) {
+      categories = [String(rawCategoryId)];
+    }
+    return {
+      categories,
+      id: row['Id'] || '',
+      code: row['Code'] || '',
+      name: row['Name'] || '',
+      description: row['Description'] || '',
+      warrantyDescription: row['Warranty Description'] || '',
+      // Dynamic/static price logic
+      useStaticPrice: row['UseStaticPrice'] === true || row['UseStaticPrice'] === 1 || String(row['UseStaticPrice']).toLowerCase() === 'yes',
+      dynamicPrice: Number(row['DynamicPrice'] ?? row['Dynamic Price'] ?? 0),
+      staticPrice: row['StaticPrice'] || row['Static Price'] || 0,
+      staticMemberPrice: row['StaticMemberPrice'] || row['Static Member Price'] || 0,
+      staticAddOnPrice: row['StaticAddOnPrice'] || row['Static Add-On Price'] || 0,
+      staticMemberAddOnPrice: row['StaticMemberAddOnPrice'] || row['Static Member Add-On Price'] || 0,
+      generalLedgerAccount: row['Account'] || '',
+      expenseAccount: row['CostOfSaleAccount'] || '',
+      recommendations: (row['Recommendations'] || '').split(',').map((s: string) => s.trim()).filter(Boolean),
+      paysCommission: row['PaysComission'] === true || row['PaysComission'] === 1 || String(row['PaysComission']).toLowerCase() === 'yes',
+      paySpecificTechBonus: row['PaySpecificTechBonus'] === true || row['PaySpecificTechBonus'] === 1 || String(row['PaySpecificTechBonus']).toLowerCase() === 'yes',
+      taxable: row['Taxable'] === true || row['Taxable'] === 1 || String(row['Taxable']).toLowerCase() === 'yes',
+      laborService: row['IsLabor'] === true || row['IsLabor'] === 1 || String(row['IsLabor']).toLowerCase() === 'yes',
+      hours: Number(row['Hours']) || 0,
+      estimatedLaborCost: Number(row['Estimated Labor Cost']) || 0,
+      allowDiscounts: row['AllowDiscounts'] === true || row['AllowDiscounts'] === 1 || String(row['AllowDiscounts']).toLowerCase() === 'yes',
+      allowMembershipDiscounts: row['AllowMemebershipDiscounts'] === true || row['AllowMemebershipDiscounts'] === 1 || String(row['AllowMemebershipDiscounts']).toLowerCase() === 'yes',
+      dollarBonus: Number(row['$ Bonus']) || 0,
+      bonusPercentage: Number(row['% Bonus']) || 0,
+      active: row['Active'] === true || row['Active'] === 1 || String(row['Active']).toLowerCase() === 'yes',
+      materialCost: Number(row['MaterialCost']) || 0,
+      materialCount: Number(row['DistinctMaterialCount']) || 0,
+    };
+  });
+}
+
+// Add a new function to process the 'Materials' sheet for ServiceTitan import
+export function processServiceTitanMaterialsSheet(sheetData: any[]): any[] {
+  const ignoreFields = [
+    'Image1', 'Image2', 'Image3', 'YoutubeUrl', 'SupplierCatalog',
+    'Allow Find More', 'Display Variation Names', 'Enable TI Continuous Learning',
+    'ExcludeFromPricebookWizard', 'Project Labels'
+  ];
+  return sheetData.map(row => {
+    // Map direct fields
+    const categoryId = row['Category.Id'] || row['CategoryID'] || row['Category ID'] || '';
+    const cost = Number(row['Cost']) || 0;
+    let price = Number(row['Price']);
+    if (isNaN(price) || price === 0) price = cost;
+    const material: any = {
+      // Only use categories array, do not include categoryId
+      categories: categoryId ? [String(categoryId)] : [],
+      categoryName: row['Category.Name'] || row['CategoryName'] || row['Category Name'] || '',
+      id: (typeof row['Id'] === 'string' && row['Id'].trim()) || (typeof row['Id'] === 'number' && row['Id'].toString()) || '',
+      code: row['Code'] || '',
+      name: row['Name'] || '',
+      description: row['Description'] || '',
+      account: row['Account'] || '',
+      costOfSaleAccount: row['CostOfSaleAccount'] || '',
+      assetAccount: row['AssetAccount'] || '',
+      cost,
+      price,
+      memberPrice: Number(row['MemberPrice']) || 0,
+      addOnPrice: Number(row['AddOnPrice']) || 0,
+      addOnMemberPrice: Number(row['AddOnMemberPrice']) || 0,
+      hours: Number(row['Hours']) || 0,
+      dollarBonus: Number(row['$ Bonus']) || 0,
+      bonusPercentage: Number(row['% Bonus']) || 0,
+      taxable: row['Taxable'] === true || row['Taxable'] === 1 || String(row['Taxable']).toLowerCase() === 'yes',
+      allowDiscounts: row['AllowDiscounts'] === true || row['AllowDiscounts'] === 1 || String(row['AllowDiscounts']).toLowerCase() === 'yes',
+      allowMembershipDiscounts: row['AllowMembershipDiscounts'] === true || row['AllowMembershipDiscounts'] === 1 || String(row['AllowMembershipDiscounts']).toLowerCase() === 'yes',
+      active: row['Active'] === true || row['Active'] === 1 || String(row['Active']).toLowerCase() === 'yes',
+      replenishment: row['Replenishment'] === true || row['Replenishment'] === 1 || String(row['Replenishment']).toLowerCase() === 'yes',
+      paysCommission: row['PaysCommission'] === true || row['PaysCommission'] === 1 || String(row['PaysCommission']).toLowerCase() === 'yes',
+      externalId: row['ExternalId'] || '',
+      source: row['Source'] || '',
+      // New boolean fields
+      DeductAsJobCost: row['DeductAsJobCost'] === true || row['DeductAsJobCost'] === 1 || String(row['DeductAsJobCost']).toLowerCase() === 'yes',
+      PaysSoldByRate: row['PaysSoldByRate'] === true || row['PaysSoldByRate'] === 1 || String(row['PaysSoldByRate']).toLowerCase() === 'yes',
+      PaysFlatAmount: row['PaysFlatAmount'] === true || row['PaysFlatAmount'] === 1 || String(row['PaysFlatAmount']).toLowerCase() === 'yes',
+      ScheduledFlatAmount: row['ScheduledFlatAmount'] === true || row['ScheduledFlatAmount'] === 1 || String(row['ScheduledFlatAmount']).toLowerCase() === 'yes',
+      AddOnFlatAmount: row['AddOnFlatAmount'] === true || row['AddOnFlatAmount'] === 1 || String(row['AddOnFlatAmount']).toLowerCase() === 'yes',
+      PayTechSpecificBonus: row['PayTechSpecificBonus'] === true || row['PayTechSpecificBonus'] === 1 || String(row['PayTechSpecificBonus']).toLowerCase() === 'yes',
+    };
+    // Parse vendor columns
+    material.vendors = [];
+    Object.keys(row).forEach(header => {
+      if (header.includes('[Vendor]')) {
+        // Extract vendor name and field type
+        const match = header.match(/^(.*)\[Vendor\] (.*)$/);
+        if (match) {
+          const vendorName = match[1].trim();
+          const fieldType = match[2].trim();
+          let vendor = material.vendors.find((v: any) => v.name === vendorName);
+          if (!vendor) {
+            vendor = { name: vendorName };
+            material.vendors.push(vendor);
+          }
+          // Map fields
+          if (fieldType === 'Active?') vendor.active = row[header] === true || row[header] === 1 || String(row[header]).toLowerCase() === 'yes';
+          if (fieldType === 'Part #') vendor.partNumber = row[header] || '';
+          if (fieldType === 'Memo') vendor.memo = row[header] || '';
+          if (fieldType === 'Price') vendor.price = row[header] || '';
+          if (fieldType === 'Primary Vendor?') vendor.primaryVendor = row[header] === true || row[header] === 1 || String(row[header]).toLowerCase() === 'yes';
+        }
+      }
+    });
+    // Remove ignored fields
+    ignoreFields.forEach(field => { delete material[field]; });
+    return material;
+  });
+}
+
+// Add a function to process the 'Equipment' sheet for ServiceTitan import
+export function processServiceTitanEquipmentSheet(sheetData: any[]): any[] {
+  const ignoreFields = [
+    'Image1', 'Image2', 'Image3', 'Video', 'YoutubeUrl', 'SupplierCatalog',
+    'ExcludeFromPricebookWizard', 'Project Labels', 'ExternalId', 'Source'
+  ];
+  return sheetData.map(row => {
+    // Directly map Category.Id to categories array (as string), no lookup
+    const rawCategoryId = row['Category.Id'] || row['CategoryID'] || row['Category ID'] || '';
+    let categories: string[] = [];
+    if (rawCategoryId) {
+      categories = [String(rawCategoryId)];
+    }
+    const equipment: any = {
+      categories,
+      categoryName: row['Category.Name'] || row['CategoryName'] || row['Category Name'] || '',
+      id: (typeof row['Id'] === 'string' && row['Id'].trim()) || (typeof row['Id'] === 'number' && row['Id'].toString()) || '',
+      type: row['Type'] || '',
+      code: row['Code'] || '',
+      name: row['Name'] || '',
+      description: row['Description'] || '',
+      account: row['Account'] || '',
+      costOfSaleAccount: row['CostOfSaleAccount'] || '',
+      assetAccount: row['AssetAccount'] || '',
+      crossSaleGroup: row['CrossSaleGroup'] || '',
+      upgrades: row['Upgrades'] || '',
+      recommendationsServices: row['Recommendations.Services'] || '',
+      recommendationsMaterials: row['Recommendations.Materials'] || '',
+      dollarBonus: Number(row['$ Bonus']) || 0,
+      paysCommission: row['PaysCommission'] === true || row['PaysCommission'] === 1 || String(row['PaysCommission']).toLowerCase() === 'yes',
+      bonusPercentage: Number(row['% Bonus']) || 0,
+      hours: Number(row['Hours']) || 0,
+      payTechSpecificBonus: row['PayTechSpecificBonus'] === true || row['PayTechSpecificBonus'] === 1 || String(row['PayTechSpecificBonus']).toLowerCase() === 'yes',
+      isConfigurable: row['IsConfigurable'] === true || row['IsConfigurable'] === 1 || String(row['IsConfigurable']).toLowerCase() === 'yes',
+      taxable: row['Taxable'] === true || row['Taxable'] === 1 || String(row['Taxable']).toLowerCase() === 'yes',
+      brand: row['Brand'] || '',
+      manufacturer: row['Manufacturer'] || '',
+      model: row['Model'] || '',
+      cost: Number(row['Cost']) || 0,
+      price: Number(row['Price']) || 0,
+      memberPrice: Number(row['MemberPrice']) || 0,
+      addOnPrice: Number(row['AddOnPrice']) || 0,
+      addOnMemberPrice: Number(row['AddOnMemberPrice']) || 0,
+      unitOfMeasure: row['UnitOfMeasure'] || '',
+      allowDiscounts: row['AllowDiscounts'] === true || row['AllowDiscounts'] === 1 || String(row['AllowDiscounts']).toLowerCase() === 'yes',
+      allowMembershipDiscounts: row['AllowMembershipDiscounts'] === true || row['AllowMembershipDiscounts'] === 1 || String(row['AllowMembershipDiscounts']).toLowerCase() === 'yes',
+      manufacturerWarrantyDuration: row['ManufacturerWarrantyDuration'] || '',
+      manufacturerWarrantyDescription: row['ManufacturerWarrantyDescription'] || '',
+      serviceProviderWarrantyDuration: row['ServiceProviderWarrantyDuration'] || '',
+      serviceProviderWarrantyDescription: row['ServiceProviderWarrantyDescription'] || '',
+      dimensionsH: row['Dimensions H'] || '',
+      dimensionsW: row['Dimensions W'] || '',
+      dimensionsD: row['Dimensions D'] || '',
+      active: row['Active'] === true || row['Active'] === 1 || String(row['Active']).toLowerCase() === 'yes',
+      replenishment: row['Replenishment'] === true || row['Replenishment'] === 1 || String(row['Replenishment']).toLowerCase() === 'yes',
+      notes: row['Notes'] || '',
+      vendors: []
+    };
+    // Parse vendor columns
+    Object.keys(row).forEach(header => {
+      if (header.includes('[Vendor]')) {
+        const match = header.match(/^(.*)\[Vendor\] (.*)$/);
+        if (match) {
+          const vendorName = match[1].trim();
+          const fieldType = match[2].trim();
+          let vendor = equipment.vendors.find((v: any) => v.name === vendorName);
+          if (!vendor) {
+            vendor = { name: vendorName };
+            equipment.vendors.push(vendor);
+          }
+          if (fieldType === 'Active?') vendor.active = row[header] === true || row[header] === 1 || String(row[header]).toLowerCase() === 'yes';
+          if (fieldType === 'Part #') vendor.partNumber = row[header] || '';
+          if (fieldType === 'Memo') vendor.memo = row[header] || '';
+          if (fieldType === 'Price') vendor.price = row[header] || '';
+          if (fieldType === 'Primary Vendor?') vendor.primaryVendor = row[header] === true || row[header] === 1 || String(row[header]).toLowerCase() === 'yes';
+        }
+      }
+    });
+    // Remove ignored fields
+    ignoreFields.forEach(field => { delete equipment[field]; });
+    return equipment;
+  });
+}
+
+// Process ServiceMaterialLinks sheet
+export function processServiceMaterialLinksSheet(sheetData: any[]): any[] {
+  return sheetData.map(row => ({
+    serviceId: row['Service.Id'] || row['Service ID'] || row['ServiceId'] || '',
+    serviceCode: row['Service.Code'] || row['Service Code'] || row['ServiceCode'] || '',
+    materialId: row['Material.Id'] || row['Material ID'] || row['MaterialId'] || '',
+    materialCode: row['Material.Code'] || row['Material Code'] || row['MaterialCode'] || '',
+    quantity: Number(row['Quantity']) || 1,
+    active: row['Active'] === true || row['Active'] === 1 || String(row['Active']).toLowerCase() === 'yes' || String(row['Active']) === '1',
+  }));
+}
+
+// Process ServiceEquipmentLinks sheet
+export function processServiceEquipmentLinksSheet(sheetData: any[]): any[] {
+  return sheetData.map(row => ({
+    serviceId: row['Service.Id'] || row['Service ID'] || row['ServiceId'] || '',
+    serviceCode: row['Service.Code'] || row['Service Code'] || row['ServiceCode'] || '',
+    equipmentId: row['Equipment.Id'] || row['Equipment ID'] || row['EquipmentId'] || '',
+    equipmentCode: row['Equipment.Code'] || row['Equipment Code'] || row['EquipmentCode'] || '',
+    quantity: Number(row['Quantity']) || 1,
+    active: row['Active'] === true || row['Active'] === 1 || String(row['Active']).toLowerCase() === 'yes' || String(row['Active']) === '1',
+  }));
+}
+
+// Process EquipmentMaterialLinks sheet
+export function processEquipmentMaterialLinksSheet(sheetData: any[]): any[] {
+  return sheetData.map(row => ({
+    equipmentId: row['Equipment.Id'] || row['Equipment ID'] || row['EquipmentId'] || '',
+    equipmentCode: row['Equipment.Code'] || row['Equipment Code'] || row['EquipmentCode'] || '',
+    materialId: row['Material.Id'] || row['Material ID'] || row['MaterialId'] || '',
+    materialCode: row['Material.Code'] || row['Material Code'] || row['MaterialCode'] || '',
+    quantity: Number(row['Quantity']) || 1,
+    active: row['Active'] === true || row['Active'] === 1 || String(row['Active']).toLowerCase() === 'yes' || String(row['Active']) === '1',
+  }));
 } 

@@ -12,11 +12,11 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
 // Helper functions
-const formatCurrency = (amount) => `$${amount != null ? amount.toFixed(2) : '0.00'}`;
-const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A';
+const formatCurrency = (amount: number | undefined | null): string => `$${amount != null ? amount.toFixed(2) : '0.00'}`;
+const formatDate = (dateString: string | undefined | null): string => dateString ? new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A';
 
 // Default business unit data fallback
-const getBusinessUnitFallback = (estimate, companyProfile) => ({
+const getBusinessUnitFallback = (estimate: any, companyProfile: any) => ({
   displayName: companyProfile?.companyName || estimate?.businessUnitName || 'Your Business',
   businessUnitName: companyProfile?.companyName || estimate?.businessUnitName || 'Your Business',
   logo: companyProfile?.logo || null,
@@ -33,7 +33,7 @@ const getBusinessUnitFallback = (estimate, companyProfile) => ({
 });
 
 // Send Modal Component
-const SendEstimateModal = ({ isOpen, onClose, estimate, onSend }) => {
+const SendEstimateModal = ({ isOpen, onClose, estimate, onSend }: { isOpen: boolean; onClose: () => void; estimate: any; onSend: () => void }) => {
   const [selectedMethod, setSelectedMethod] = useState('email');
   const [selectedContact, setSelectedContact] = useState('');
   const [customContact, setCustomContact] = useState('');
@@ -207,15 +207,15 @@ const SendEstimateModal = ({ isOpen, onClose, estimate, onSend }) => {
 };
 
 // Professional Estimate Template Component
-const EstimateTemplate = ({ estimate, businessUnit, companyProfile }) => {
+const EstimateTemplate = ({ estimate, businessUnit, companyProfile }: { estimate: any; businessUnit: any; companyProfile: any }) => {
   if (!estimate) return <div className="p-8 text-center text-gray-500">Loading estimate...</div>;
 
   // Use fallback business unit data if not available
   const businessData = businessUnit || getBusinessUnitFallback(estimate, companyProfile);
 
   const totals = {
-    subtotal: (estimate.services || []).reduce((sum, service) => sum + ((service.quantity || 0) * (service.unitPrice || 0)), 0) +
-              (estimate.materials || []).reduce((sum, material) => sum + ((material.quantity || 0) * (material.unitPrice || 0)), 0),
+    subtotal: (estimate.services || []).reduce((sum: any, service: any) => sum + ((service.quantity || 0) * (service.unitPrice || 0)), 0) +
+              (estimate.materials || []).reduce((sum: any, material: any) => sum + ((material.quantity || 0) * (material.unitPrice || 0)), 0),
     taxAmount: 0,
     total: 0
   };
@@ -274,7 +274,7 @@ const EstimateTemplate = ({ estimate, businessUnit, companyProfile }) => {
               {estimate.billTo?.company && <div>{estimate.billTo.company}</div>}
               {estimate.billTo?.address && (
                 <div className="text-sm text-gray-600 mt-1">
-                  {estimate.billTo.address.split(',').map((line, index) => (
+                  {estimate.billTo.address.split(',').map((line: any, index: any) => (
                     <div key={index}>{line.trim()}</div>
                   ))}
                 </div>
@@ -290,7 +290,7 @@ const EstimateTemplate = ({ estimate, businessUnit, companyProfile }) => {
               <div className="font-semibold">{estimate.serviceLocation?.name || estimate.customerName}</div>
               {estimate.serviceLocation?.address && (
                 <div className="text-sm text-gray-600 mt-1">
-                  {estimate.serviceLocation.address.split(',').map((line, index) => (
+                  {estimate.serviceLocation.address.split(',').map((line: any, index: any) => (
                     <div key={index}>{line.trim()}</div>
                   ))}
                 </div>
@@ -307,7 +307,7 @@ const EstimateTemplate = ({ estimate, businessUnit, companyProfile }) => {
             Description of Work
           </h3>
           <div className="text-gray-800 text-center">
-            {estimate.description || estimate.summary}
+            <div dangerouslySetInnerHTML={{ __html: estimate.description || estimate.summary }} />
           </div>
         </div>
       )}
@@ -325,19 +325,23 @@ const EstimateTemplate = ({ estimate, businessUnit, companyProfile }) => {
             </tr>
           </thead>
           <tbody>
-            {(estimate.services || []).map((service, index) => (
+            {(estimate.services || []).map((service: any, index: any) => (
               <tr key={`service-${index}`} className="border-b border-gray-200">
                 <td className="py-3 text-sm text-gray-900">{service.name}</td>
-                <td className="py-3 text-sm text-gray-600">{service.description || ''}</td>
+                <td className="py-3 text-sm text-gray-600">
+                  <div dangerouslySetInnerHTML={{ __html: service.description || '' }} />
+                </td>
                 <td className="py-3 text-sm text-center text-gray-900">{service.quantity}</td>
                 <td className="py-3 text-sm text-right text-gray-900">{formatCurrency(service.unitPrice)}</td>
                 <td className="py-3 text-sm text-right text-gray-900 font-semibold">{formatCurrency((service.quantity || 0) * (service.unitPrice || 0))}</td>
               </tr>
             ))}
-            {(estimate.materials || []).map((material, index) => (
+            {(estimate.materials || []).map((material: any, index: any) => (
               <tr key={`material-${index}`} className="border-b border-gray-200">
                 <td className="py-3 text-sm text-gray-900">{material.name}</td>
-                <td className="py-3 text-sm text-gray-600">{material.description || ''}</td>
+                <td className="py-3 text-sm text-gray-600">
+                  <div dangerouslySetInnerHTML={{ __html: material.description || '' }} />
+                </td>
                 <td className="py-3 text-sm text-center text-gray-900">{material.quantity}</td>
                 <td className="py-3 text-sm text-right text-gray-900">{formatCurrency(material.unitPrice)}</td>
                 <td className="py-3 text-sm text-right text-gray-900 font-semibold">{formatCurrency((material.quantity || 0) * (material.unitPrice || 0))}</td>
@@ -622,42 +626,42 @@ const EstimateDetail = () => {
   };
 
   // Update service
-  const updateService = (index, field, value) => {
+  const updateService = (index: any, field: any, value: any) => {
     setEditData(prev => ({
       ...prev,
-      services: prev.services.map((service, i) => 
+      services: prev.services.map((service: any, i: any) => 
         i === index ? { ...service, [field]: value } : service
       )
     }));
   };
 
   // Update material
-  const updateMaterial = (index, field, value) => {
+  const updateMaterial = (index: any, field: any, value: any) => {
     setEditData(prev => ({
       ...prev,
-      materials: prev.materials.map((material, i) => 
+      materials: prev.materials.map((material: any, i: any) => 
         i === index ? { ...material, [field]: value } : material
       )
     }));
   };
 
   // Remove service
-  const removeService = (index) => {
+  const removeService = (index: any) => {
     setEditData(prev => ({
       ...prev,
-      services: prev.services.filter((_, i) => i !== index)
+      services: prev.services.filter((_, i: any) => i !== index)
     }));
   };
 
   // Remove material
-  const removeMaterial = (index) => {
+  const removeMaterial = (index: any) => {
     setEditData(prev => ({
       ...prev,
-      materials: prev.materials.filter((_, i) => i !== index)
+      materials: prev.materials.filter((_, i: any) => i !== index)
     }));
   };
 
-  const handleSendToCustomer = useCallback(async (method, contact, message) => {
+  const handleSendToCustomer = useCallback(async (method: any, contact: any, message: any) => {
     if (!estimate) return;
     
     try {
@@ -766,8 +770,8 @@ const EstimateDetail = () => {
 
   // Calculate totals
   const totals = {
-    subtotal: (editData.services || []).reduce((sum, service) => sum + ((service.quantity || 0) * (service.unitPrice || 0)), 0) +
-              (editData.materials || []).reduce((sum, material) => sum + ((material.quantity || 0) * (material.unitPrice || 0)), 0),
+    subtotal: (editData.services || []).reduce((sum: any, service: any) => sum + ((service.quantity || 0) * (service.unitPrice || 0)), 0) +
+              (editData.materials || []).reduce((sum: any, material: any) => sum + ((material.quantity || 0) * (material.unitPrice || 0)), 0),
     taxAmount: 0,
     total: 0
   };
@@ -950,7 +954,7 @@ const EstimateDetail = () => {
               </div>
               
               <div className="space-y-4">
-                {editData.services.map((service, index) => (
+                {editData.services.map((service: any, index: any) => (
                   <div key={service.id} className="border border-gray-200 dark:border-slate-700 rounded-lg p-4">
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                       <div>
@@ -1044,7 +1048,7 @@ const EstimateDetail = () => {
               </div>
               
               <div className="space-y-4">
-                {editData.materials.map((material, index) => (
+                {editData.materials.map((material: any, index: any) => (
                   <div key={material.id} className="border border-gray-200 dark:border-slate-700 rounded-lg p-4">
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                       <div>
@@ -1171,7 +1175,7 @@ const EstimateDetail = () => {
               />
               {editData.tags.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-3">
-                  {editData.tags.map(tag => (
+                  {editData.tags.map((tag: any) => (
                     <span key={tag} className="px-3 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded-full text-sm">
                       {tag}
                     </span>

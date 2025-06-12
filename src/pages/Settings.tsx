@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronDown, ChevronRight, Search, Plus, X, User, Mail, Phone, MapPin, Calendar, Shield, Building, Camera, Edit, Palette, Upload, Image } from 'lucide-react';
-import { initializeApp } from "firebase/app";
+import { initializeApp, FirebaseOptions } from "firebase/app";
 import { 
-  getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, 
-  query, where, setDoc 
+  getFirestore, Firestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, 
+  query, where, setDoc, getDocs 
 } from "firebase/firestore";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import GLAccounts from '../components/GLAccounts';
 
 interface SettingItem {
   name: string;
@@ -38,63 +39,6 @@ const settingsSections: SettingSection[] = [
     ]
   },
   {
-    name: 'Integrations',
-    items: [
-      { name: 'API Application Access', path: 'api-access' },
-      { name: 'Booking Providers', path: 'booking-providers' },
-      { name: 'Enterprise Hub', path: 'enterprise-hub' },
-      { name: 'Financing', path: 'financing' },
-      { name: 'GPS', path: 'gps' },
-      { name: 'Job Type Mapping', path: 'job-type-mapping' },
-      { name: 'Marketing Integrations', path: 'marketing-integrations' },
-      { name: 'Mobile', path: 'mobile' },
-      { name: 'Payment Processing', path: 'payment-processing' },
-      { name: 'QuickBooks Desktop', path: 'quickbooks' }
-    ]
-  },
-  {
-    name: 'Dispatch Board',
-    items: [
-      { name: 'Alerts', path: 'dispatch-alerts' },
-      { name: 'Clock In/Out', path: 'clock-in-out' },
-      { name: 'Job Confirmations', path: 'job-confirmations' }
-    ]
-  },
-  {
-    name: 'Operations',
-    items: [
-      { name: 'Rescheduled Reason', path: 'rescheduled-reason' },
-      { name: 'TitanExchange', path: 'titanexchange' },
-      { name: 'Marketing Pro', path: 'marketing-pro' },
-      { name: 'Capacity Planning', path: 'capacity-planning' },
-      { name: 'Business Unit Groups', path: 'business-unit-groups' },
-      { name: 'Configuration', path: 'operations-config' },
-      { name: 'Purchasing', path: 'purchasing' },
-      { name: 'Phones Pro', path: 'phones-pro' },
-      { name: 'Types', path: 'types' },
-      { name: 'Recurring Service Types', path: 'recurring-service-types' },
-      { name: 'Tax Zones', path: 'tax-zones' }
-    ]
-  },
-  {
-    name: 'Accounting',
-    items: [
-      { name: 'Accounting Periods', path: 'accounting-periods' },
-      { name: 'Application For Payment', path: 'payment-application' },
-      { name: 'Costing', path: 'costing' },
-      { name: 'General Ledger Accounts', path: 'gl-accounts' },
-      { name: 'Journal Entries and Auto Batching', path: 'journal-entries' },
-      { name: 'Payroll GL Mapping', path: 'payroll-gl-mapping' }
-    ]
-  },
-  {
-    name: 'Tools',
-    items: [
-      { name: 'Titan Intelligence', path: 'titan-intelligence' },
-      { name: 'Dispatch Pro', path: 'dispatch-pro' }
-    ]
-  },
-  {
     name: 'Core Data',
     items: [
       { name: 'Business Units', path: 'business-units' },
@@ -123,6 +67,40 @@ const settingsSections: SettingSection[] = [
       { name: 'Template Pricebook Items', path: 'template-pricebook-items' },
       { name: 'Timesheet Codes', path: 'timesheet-codes' },
       { name: 'Zones', path: 'zones' }
+    ]
+  },
+  {
+    name: 'Integrations',
+    items: [
+      { name: 'API Application Access', path: 'api-access' },
+      { name: 'Booking Providers', path: 'booking-providers' },
+      { name: 'Enterprise Hub', path: 'enterprise-hub' },
+      { name: 'Financing', path: 'financing' },
+      { name: 'GPS', path: 'gps' },
+      { name: 'Job Type Mapping', path: 'job-type-mapping' },
+      { name: 'Marketing Integrations', path: 'marketing-integrations' },
+      { name: 'Mobile', path: 'mobile' },
+      { name: 'Payment Processing', path: 'payment-processing' },
+      { name: 'QuickBooks Desktop', path: 'quickbooks' }
+    ]
+  },
+  {
+    name: 'Accounting',
+    items: [
+      { name: 'Accounting Periods', path: 'accounting-periods' },
+      { name: 'Application For Payment', path: 'payment-application' },
+      { name: 'Costing', path: 'costing' },
+      { name: 'General Ledger Accounts', path: 'gl-accounts' },
+      { name: 'Journal Entries and Auto Batching', path: 'journal-entries' },
+      { name: 'Payroll GL Mapping', path: 'payroll-gl-mapping' }
+    ]
+  },
+  {
+    name: 'Dispatch Board',
+    items: [
+      { name: 'Alerts', path: 'dispatch-alerts' },
+      { name: 'Clock In/Out', path: 'clock-in-out' },
+      { name: 'Job Confirmations', path: 'job-confirmations' }
     ]
   },
   {
@@ -171,8 +149,18 @@ const predefinedColors = [
 ];
 
 // Color Picker Component
-const ColorPicker = ({ selectedColor, onColorChange, onClose }) => {
-  const [customColor, setCustomColor] = useState(selectedColor || '#3B82F6');
+interface ColorPickerProps {
+  selectedColor: string;
+  onColorChange: (color: string) => void;
+  onClose: () => void;
+}
+
+const ColorPicker: React.FC<ColorPickerProps> = ({ 
+  selectedColor,
+  onColorChange,
+  onClose
+}) => {
+  const [customColor, setCustomColor] = useState<string>(selectedColor || '#3B82F6');
 
   return (
     <div className="absolute top-full left-0 mt-2 p-4 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg shadow-lg z-50 w-64">
@@ -234,20 +222,39 @@ const ColorPicker = ({ selectedColor, onColorChange, onClose }) => {
 };
 
 // Logo Upload Component
-const LogoUpload = ({ currentLogo, onLogoChange, label = "Logo" }) => {
-  const [logoPreview, setLogoPreview] = useState(currentLogo || '');
+interface LogoUploadProps {
+  currentLogo: string;
+  onLogoChange: (dataUrl: string) => void;
+  label?: string;
+}
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target.result;
-        setLogoPreview(dataUrl);
-        onLogoChange(dataUrl);
-      };
-      reader.readAsDataURL(file);
-    }
+const LogoUpload = ({ 
+  currentLogo, 
+  onLogoChange, 
+  label = "Logo" 
+}: LogoUploadProps): JSX.Element => {
+  const [logoPreview, setLogoPreview] = useState<string>(currentLogo || '');
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      // Validate file size (2MB max)
+      if (file.size > 2 * 1024 * 1024) { setError('File size must be less than 2MB'); return; }
+
+      // Validate file type
+      if (!file.type.match(/^image\/(jpeg|png|svg\+xml)$/)) { setError('File must be JPG, PNG or SVG'); return; }
+
+      setError(null);
+      // Moved if (file) block inside try so that the function is closed properly
+      if (file) {
+         const reader = new FileReader();
+         reader.onload = (e) => { const dataUrl = e.target.result; setLogoPreview(dataUrl); onLogoChange(dataUrl); };
+         reader.readAsDataURL(file);
+      }
+    } catch (err) { console.error("Error processing file:", err); setError("An error occurred while processing the file."); }
   };
 
   return (
@@ -292,10 +299,16 @@ const LogoUpload = ({ currentLogo, onLogoChange, label = "Logo" }) => {
 };
 
 // Tag Input Component
-const TagInput = ({ tags, onTagsChange, placeholder = "Type and press Enter to add tags" }) => {
+interface TagInputProps {
+  tags: string[];
+  onTagsChange: (tags: string[]) => void;
+  placeholder?: string;
+}
+
+const TagInput: React.FC<TagInputProps> = ({ tags, onTagsChange, placeholder = "Type and press Enter to add tags" }) => {
   const [currentTag, setCurrentTag] = useState('');
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && currentTag.trim()) {
       e.preventDefault();
       if (!tags.includes(currentTag.trim())) {
@@ -305,7 +318,7 @@ const TagInput = ({ tags, onTagsChange, placeholder = "Type and press Enter to a
     }
   };
 
-  const removeTag = (tagToRemove) => {
+  const removeTag = (tagToRemove: string) => {
     onTagsChange(tags.filter(tag => tag !== tagToRemove));
   };
 
@@ -339,35 +352,69 @@ const TagInput = ({ tags, onTagsChange, placeholder = "Type and press Enter to a
 };
 
 // Create/Edit Staff Member Form Component
-const StaffForm = ({ onCancel, onSave, staffType, editingStaff = null }) => {
-  const [formData, setFormData] = useState({
-    firstName: editingStaff?.firstName || '',
-    lastName: editingStaff?.lastName || '',
-    email: editingStaff?.email || '',
-    phone: editingStaff?.phone || '',
-    homeAddress: editingStaff?.homeAddress || '',
-    dateOfBirth: editingStaff?.dateOfBirth || '',
-    socialSecurityNumber: editingStaff?.socialSecurityNumber || '',
-    role: editingStaff?.role || (staffType === 'office' ? 'CSR' : 'Helper'),
-    businessUnit: editingStaff?.businessUnit || '',
-    profilePicture: editingStaff?.profilePicture || '',
-    color: editingStaff?.color || '#3B82F6'
+interface StaffFormProps {
+  onCancel: () => void;
+  onSave: (staffData: Omit<StaffMember, 'id'>) => void;
+  staffType: 'office' | 'technician';
+  editingStaff: StaffMember | null;
+}
+
+const StaffForm: React.FC<StaffFormProps> = ({ onCancel, onSave, staffType, editingStaff }) => {
+  const [formData, setFormData] = useState<Omit<StaffMember, 'id'>>({
+    userId: '',
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    homeAddress: '',
+    dateOfBirth: '',
+    socialSecurityNumber: '',
+    role: '',
+    businessUnit: '',
+    profilePicture: '',
+    color: '',
+    type: staffType,
+    fullName: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    status: 'active'
   });
+
+  useEffect(() => {
+    if (editingStaff) {
+      const { id, ...staffData } = editingStaff;
+      setFormData(staffData);
+    }
+  }, [editingStaff]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const fullName = `${formData.firstName} ${formData.lastName}`.trim();
+    onSave({
+      ...formData,
+      fullName,
+      type: staffType,
+      updatedAt: new Date().toISOString()
+    });
+  };
 
   const [profilePicturePreview, setProfilePicturePreview] = useState(editingStaff?.profilePicture || '');
   const [showColorPicker, setShowColorPicker] = useState(false);
 
-  const handleChange = (e) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => ({
+      ...prev,
+      [name]: String(value)
+    }));
   };
 
-  const handleProfilePictureChange = (e) => {
-    const file = e.target.files[0];
+  const handleProfilePictureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (e) => {
-        const dataUrl = e.target.result;
+        const dataUrl = e.target?.result as string;
         setProfilePicturePreview(dataUrl);
         setFormData(prev => ({ ...prev, profilePicture: dataUrl }));
       };
@@ -375,32 +422,9 @@ const StaffForm = ({ onCancel, onSave, staffType, editingStaff = null }) => {
     }
   };
 
-  const handleColorChange = (color) => {
+  const handleColorChange = (color: string) => {
     setFormData(prev => ({ ...prev, color }));
     setShowColorPicker(false);
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone) {
-      alert('Please fill in all required fields');
-      return;
-    }
-
-    const staffData = {
-      ...formData,
-      staffType,
-      fullName: `${formData.firstName} ${formData.lastName}`,
-      updatedAt: new Date().toISOString(),
-      status: editingStaff?.status || 'active'
-    };
-
-    if (!editingStaff) {
-      staffData.createdAt = new Date().toISOString();
-    }
-
-    onSave(staffData, editingStaff?.id);
   };
 
   const officeRoles = ['CSR', 'Admin', 'Accounting', 'Inventory', 'Manager'];
@@ -651,11 +675,18 @@ const StaffForm = ({ onCancel, onSave, staffType, editingStaff = null }) => {
             </div>
           </div>
 
-          <div className="flex justify-end p-6 border-t bg-gray-50 dark:bg-slate-800 space-x-3 border-gray-200 dark:border-slate-700">
-            <button type="button" onClick={onCancel} className="px-6 py-2 border border-gray-300 dark:border-slate-600 rounded-md text-sm font-medium hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-gray-200">
+          <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 dark:border-slate-700">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700"
+            >
               Cancel
             </button>
-            <button type="submit" className="px-6 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
               {editingStaff ? 'Update' : 'Create'} {staffType === 'office' ? 'Office Staff' : 'Technician'}
             </button>
           </div>
@@ -666,9 +697,31 @@ const StaffForm = ({ onCancel, onSave, staffType, editingStaff = null }) => {
 };
 
 // Staff List Component
-const StaffList = ({ staffType, staff, onAdd, onEdit, onDelete }) => {
-  const getRoleColor = (role) => {
-    const roleColors = {
+interface StaffListProps {
+  staffType: 'office' | 'technician';
+  staff: StaffMember[];
+  onAdd: () => void;
+  onEdit: (staff: StaffMember) => void;
+  onDelete: (staffId: string) => void;
+  onShowForm: () => void;
+  onSetEditingStaff: (staff: StaffMember | null) => void;
+}
+
+const StaffList: React.FC<StaffListProps> = ({
+  staffType,
+  staff,
+  onAdd,
+  onEdit,
+  onDelete,
+  onShowForm,
+  onSetEditingStaff
+}) => {
+  type RoleColor = {
+    [key: string]: string;
+  };
+
+  const getRoleColor = (role: string): string => {
+    const roleColors: RoleColor = {
       'CSR': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
       'Admin': 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
       'Accounting': 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
@@ -689,7 +742,7 @@ const StaffList = ({ staffType, staff, onAdd, onEdit, onDelete }) => {
             {staffType} ({staff.length})
           </h3>
           <button
-            onClick={onAdd}
+            onClick={onShowForm}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
           >
             <Plus size={16} className="mr-2" />
@@ -815,7 +868,10 @@ const StaffList = ({ staffType, staff, onAdd, onEdit, onDelete }) => {
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex justify-end space-x-2">
                       <button
-                        onClick={() => onEdit(member)}
+                        onClick={() => {
+                          onSetEditingStaff(member);
+                          onEdit(member);
+                        }}
                         className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors flex items-center"
                       >
                         <Edit size={14} className="mr-1" />
@@ -840,11 +896,34 @@ const StaffList = ({ staffType, staff, onAdd, onEdit, onDelete }) => {
 };
 
 // Business Units Management Component
-const BusinessUnitsManagement = ({ db, userId }) => {
-  const [businessUnits, setBusinessUnits] = useState([]);
-  const [showForm, setShowForm] = useState(false);
-  const [editingUnit, setEditingUnit] = useState(null);
-  const [formData, setFormData] = useState({
+interface BusinessUnitsManagementProps {
+  db: Firestore;
+  userId: string;
+}
+
+interface BusinessUnitFormData extends Omit<BusinessUnit, 'id' | 'userId'> {
+  name: string;
+  officialName: string;
+  email: string;
+  bccEmail: string;
+  phoneNumber: string;
+  trade: string;
+  division: string;
+  tags: string[];
+  defaultWarehouse: string;
+  currency: string;
+  invoiceHeader: string;
+  invoiceMessage: string;
+  logo: string;
+  isActive: boolean;
+}
+
+const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, userId }) => {
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+  const [editingUnit, setEditingUnit] = useState<BusinessUnit | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [formData, setFormData] = useState<BusinessUnitFormData>({
     name: '',
     officialName: '',
     email: '',
@@ -861,7 +940,6 @@ const BusinessUnitsManagement = ({ db, userId }) => {
     isActive: true
   });
 
-  // Load business units
   useEffect(() => {
     if (!db || !userId) return;
 
@@ -871,28 +949,97 @@ const BusinessUnitsManagement = ({ db, userId }) => {
     );
 
     const unsubscribe = onSnapshot(businessUnitsQuery, (querySnapshot) => {
-      const unitsData = [];
+      const units: BusinessUnit[] = [];
       querySnapshot.forEach((doc) => {
-        unitsData.push({ id: doc.id, ...doc.data() });
+        const data = doc.data();
+        units.push({
+          id: doc.id,
+          userId,
+          name: data.name || '',
+          officialName: data.officialName || '',
+          email: data.email || '',
+          bccEmail: data.bccEmail || '',
+          phoneNumber: data.phoneNumber || '',
+          trade: data.trade || '',
+          division: data.division || '',
+          tags: data.tags || [],
+          defaultWarehouse: data.defaultWarehouse || '',
+          currency: data.currency || 'USD',
+          invoiceHeader: data.invoiceHeader || '',
+          invoiceMessage: data.invoiceMessage || '',
+          logo: data.logo || '',
+          isActive: data.isActive ?? true,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt
+        });
       });
-      setBusinessUnits(unitsData);
+      setBusinessUnits(units);
+      setIsLoading(false);
+    }, (error) => {
+      console.error("Error loading business units:", error);
+      setError("Failed to load business units");
+      setIsLoading(false);
     });
 
     return () => unsubscribe();
   }, [db, userId]);
 
-  const handleSave = async (e) => {
+  const handleDelete = async (unitId: string): Promise<void> => {
+    if (!db) {
+      setError("Database not ready. Please try again.");
+      return;
+    }
+
+    if (window.confirm("Are you sure you want to delete this business unit?")) {
+      try {
+        await deleteDoc(doc(db, 'businessUnits', unitId));
+      } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : "Failed to delete business unit";
+        console.error("Error deleting business unit:", e);
+        setError(errorMessage);
+      }
+    }
+  };
+
+  const handleTagsChange = (newTags: string[]): void => {
+    setFormData(prev => ({ ...prev, tags: newTags }));
+  };
+
+  const handleLogoChange = (logoData: string): void => {
+    setFormData(prev => ({ ...prev, logo: logoData }));
+  };
+
+  const handleEdit = (unit: BusinessUnit): void => {
+    setEditingUnit(unit);
+    setFormData({
+      name: unit.name,
+      officialName: unit.officialName,
+      email: unit.email,
+      bccEmail: unit.bccEmail,
+      phoneNumber: unit.phoneNumber,
+      trade: unit.trade,
+      division: unit.division,
+      tags: unit.tags,
+      defaultWarehouse: unit.defaultWarehouse,
+      currency: unit.currency,
+      invoiceHeader: unit.invoiceHeader,
+      invoiceMessage: unit.invoiceMessage,
+      logo: unit.logo,
+      isActive: unit.isActive
+    });
+  };
+
+  const handleSave = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
-    
-    if (!formData.name || !formData.officialName) {
-      alert('Please fill in required fields');
+    if (!db || !userId) {
+      setError("Database not ready. Please try again.");
       return;
     }
 
     try {
       const unitData = {
         ...formData,
-        userId: userId,
+        userId,
         updatedAt: new Date().toISOString()
       };
 
@@ -900,11 +1047,9 @@ const BusinessUnitsManagement = ({ db, userId }) => {
         await updateDoc(doc(db, 'businessUnits', editingUnit.id), unitData);
       } else {
         unitData.createdAt = new Date().toISOString();
-        const customId = `bu_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        await setDoc(doc(db, 'businessUnits', customId), unitData);
+        await addDoc(collection(db, 'businessUnits'), unitData);
       }
 
-      setShowForm(false);
       setEditingUnit(null);
       setFormData({
         name: '',
@@ -922,50 +1067,11 @@ const BusinessUnitsManagement = ({ db, userId }) => {
         logo: '',
         isActive: true
       });
-    } catch (error) {
-      console.error('Error saving business unit:', error);
-      alert('Failed to save business unit');
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : "Failed to save business unit";
+      console.error("Error saving business unit:", e);
+      setError(errorMessage);
     }
-  };
-
-  const handleEdit = (unit) => {
-    setEditingUnit(unit);
-    setFormData({
-      name: unit.name || '',
-      officialName: unit.officialName || '',
-      email: unit.email || '',
-      bccEmail: unit.bccEmail || '',
-      phoneNumber: unit.phoneNumber || '',
-      trade: unit.trade || '',
-      division: unit.division || '',
-      tags: unit.tags || [],
-      defaultWarehouse: unit.defaultWarehouse || '',
-      currency: unit.currency || 'USD',
-      invoiceHeader: unit.invoiceHeader || '',
-      invoiceMessage: unit.invoiceMessage || '',
-      logo: unit.logo || '',
-      isActive: unit.isActive !== false
-    });
-    setShowForm(true);
-  };
-
-  const handleDelete = async (unitId) => {
-    if (window.confirm('Are you sure you want to delete this business unit?')) {
-      try {
-        await deleteDoc(doc(db, 'businessUnits', unitId));
-      } catch (error) {
-        console.error('Error deleting business unit:', error);
-        alert('Failed to delete business unit');
-      }
-    }
-  };
-
-  const handleTagsChange = (newTags) => {
-    setFormData(prev => ({ ...prev, tags: newTags }));
-  };
-
-  const handleLogoChange = (logoData) => {
-    setFormData(prev => ({ ...prev, logo: logoData }));
   };
 
   const tradeOptions = [
@@ -991,7 +1097,7 @@ const BusinessUnitsManagement = ({ db, userId }) => {
             Bulk Update
           </button>
           <button
-            onClick={() => setShowForm(true)}
+            onClick={() => setEditingUnit(null)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
           >
             <Plus size={16} className="mr-2" />
@@ -1012,7 +1118,7 @@ const BusinessUnitsManagement = ({ db, userId }) => {
               Create business units to organize your operations by location or service type.
             </p>
             <button
-              onClick={() => setShowForm(true)}
+              onClick={() => setEditingUnit(null)}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               Add First Business Unit
@@ -1118,7 +1224,7 @@ const BusinessUnitsManagement = ({ db, userId }) => {
       </div>
 
       {/* Business Unit Form Modal */}
-      {showForm && (
+      {editingUnit && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <form onSubmit={handleSave}>
@@ -1129,7 +1235,6 @@ const BusinessUnitsManagement = ({ db, userId }) => {
                 <button 
                   type="button"
                   onClick={() => {
-                    setShowForm(false);
                     setEditingUnit(null);
                     setFormData({
                       name: '',
@@ -1349,7 +1454,6 @@ const BusinessUnitsManagement = ({ db, userId }) => {
                 <button
                   type="button"
                   onClick={() => {
-                    setShowForm(false);
                     setEditingUnit(null);
                     setFormData({
                       name: '',
@@ -1388,85 +1492,125 @@ const BusinessUnitsManagement = ({ db, userId }) => {
 };
 
 // Enhanced Company Profile Component
-const CompanyProfileManagement = ({ db, userId }) => {
-  const [companyProfile, setCompanyProfile] = useState({
+interface CompanyProfileManagementProps {
+  db: Firestore;
+  userId: string;
+}
+
+interface CompanyProfileFormData extends Omit<CompanyProfile, 'id' | 'userId'> {
+  companyName: string;
+  phoneNumber: string;
+  email: string;
+  website: string;
+  taxId: string;
+  licenseNumber: string;
+  businessAddress: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  logo: string;
+  estimateAutoParagraph: string;
+  invoiceAutoParagraph: string;
+}
+
+const CompanyProfileManagement: React.FC<CompanyProfileManagementProps> = ({ db, userId }) => {
+  const [profile, setProfile] = useState<CompanyProfile | null>(null);
+  const [formData, setFormData] = useState<CompanyProfileFormData>({
     companyName: '',
+    phoneNumber: '',
+    email: '',
+    website: '',
+    taxId: '',
+    licenseNumber: '',
     businessAddress: '',
     city: '',
     state: '',
     zipCode: '',
-    phoneNumber: '',
-    email: '',
-    website: '',
     logo: '',
     estimateAutoParagraph: '',
-    invoiceAutoParagraph: '',
-    taxId: '',
-    licenseNumber: ''
+    invoiceAutoParagraph: ''
   });
+  const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Load company profile
   useEffect(() => {
     if (!db || !userId) return;
 
-    const companyProfileQuery = query(
-      collection(db, 'companyProfiles'),
-      where("userId", "==", userId)
-    );
-
-    const unsubscribe = onSnapshot(companyProfileQuery, (querySnapshot) => {
-      if (!querySnapshot.empty) {
-        const profileData = querySnapshot.docs[0].data();
-        setCompanyProfile(profileData);
+    const profileRef = doc(db, 'companyProfiles', userId);
+    const unsubscribe = onSnapshot(profileRef, (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        const profileData: CompanyProfile = {
+          id: doc.id,
+          userId,
+          companyName: data.companyName || '',
+          phoneNumber: data.phoneNumber || '',
+          email: data.email || '',
+          website: data.website || '',
+          taxId: data.taxId || '',
+          licenseNumber: data.licenseNumber || '',
+          businessAddress: data.businessAddress || '',
+          city: data.city || '',
+          state: data.state || '',
+          zipCode: data.zipCode || '',
+          logo: data.logo || '',
+          estimateAutoParagraph: data.estimateAutoParagraph || '',
+          invoiceAutoParagraph: data.invoiceAutoParagraph || ''
+        };
+        setProfile(profileData);
+        setFormData({
+          companyName: profileData.companyName,
+          phoneNumber: profileData.phoneNumber,
+          email: profileData.email,
+          website: profileData.website,
+          taxId: profileData.taxId,
+          licenseNumber: profileData.licenseNumber,
+          businessAddress: profileData.businessAddress,
+          city: profileData.city,
+          state: profileData.state,
+          zipCode: profileData.zipCode,
+          logo: profileData.logo,
+          estimateAutoParagraph: profileData.estimateAutoParagraph,
+          invoiceAutoParagraph: profileData.invoiceAutoParagraph
+        });
       }
+      setIsLoading(false);
+    }, (error) => {
+      console.error("Error loading company profile:", error);
+      setError("Failed to load company profile");
       setIsLoading(false);
     });
 
     return () => unsubscribe();
   }, [db, userId]);
 
-  const handleSave = async (e) => {
+  const handleSave = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
-    setIsSaving(true);
+    if (!db || !userId) {
+      setError("Database not ready. Please try again.");
+      return;
+    }
 
     try {
-      const profileData = {
-        ...companyProfile,
-        userId: userId,
+      setIsSaving(true);
+      const profileRef = doc(db, 'companyProfiles', userId);
+      await setDoc(profileRef, {
+        ...formData,
+        userId,
         updatedAt: new Date().toISOString()
-      };
-
-      // Check if profile exists
-      const companyProfileQuery = query(
-        collection(db, 'companyProfiles'),
-        where("userId", "==", userId)
-      );
-      
-      const querySnapshot = await getDocs(companyProfileQuery);
-      
-      if (!querySnapshot.empty) {
-        // Update existing profile
-        const docId = querySnapshot.docs[0].id;
-        await updateDoc(doc(db, 'companyProfiles', docId), profileData);
-      } else {
-        // Create new profile
-        profileData.createdAt = new Date().toISOString();
-        await addDoc(collection(db, 'companyProfiles'), profileData);
-      }
-
-      alert('Company profile saved successfully!');
-    } catch (error) {
-      console.error('Error saving company profile:', error);
-      alert('Failed to save company profile');
+      }, { merge: true });
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : "Failed to save company profile";
+      console.error("Error saving company profile:", e);
+      setError(errorMessage);
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleLogoChange = (logoData) => {
-    setCompanyProfile(prev => ({ ...prev, logo: logoData }));
+  const handleLogoChange = (logoData: string): void => {
+    setFormData(prev => ({ ...prev, logo: logoData }));
   };
 
   if (isLoading) {
@@ -1488,7 +1632,7 @@ const CompanyProfileManagement = ({ db, userId }) => {
         <form onSubmit={handleSave} className="space-y-6">
           {/* Company Logo */}
           <LogoUpload
-            currentLogo={companyProfile.logo}
+            currentLogo={formData.logo}
             onLogoChange={handleLogoChange}
             label="Company Logo"
           />
@@ -1503,8 +1647,8 @@ const CompanyProfileManagement = ({ db, userId }) => {
                 </label>
                 <input
                   type="text"
-                  value={companyProfile.companyName}
-                  onChange={(e) => setCompanyProfile(prev => ({ ...prev, companyName: e.target.value }))}
+                  value={formData.companyName}
+                  onChange={(e) => setFormData(prev => ({ ...prev, companyName: e.target.value }))}
                   required
                   className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   placeholder="Enter company name"
@@ -1517,8 +1661,8 @@ const CompanyProfileManagement = ({ db, userId }) => {
                 </label>
                 <input
                   type="tel"
-                  value={companyProfile.phoneNumber}
-                  onChange={(e) => setCompanyProfile(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                  value={formData.phoneNumber}
+                  onChange={(e) => setFormData(prev => ({ ...prev, phoneNumber: e.target.value }))}
                   required
                   className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   placeholder="Enter phone number"
@@ -1531,8 +1675,8 @@ const CompanyProfileManagement = ({ db, userId }) => {
                 </label>
                 <input
                   type="email"
-                  value={companyProfile.email}
-                  onChange={(e) => setCompanyProfile(prev => ({ ...prev, email: e.target.value }))}
+                  value={formData.email}
+                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   placeholder="Enter email address"
                 />
@@ -1544,8 +1688,8 @@ const CompanyProfileManagement = ({ db, userId }) => {
                 </label>
                 <input
                   type="url"
-                  value={companyProfile.website}
-                  onChange={(e) => setCompanyProfile(prev => ({ ...prev, website: e.target.value }))}
+                  value={formData.website}
+                  onChange={(e) => setFormData(prev => ({ ...prev, website: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   placeholder="https://yourwebsite.com"
                 />
@@ -1557,8 +1701,8 @@ const CompanyProfileManagement = ({ db, userId }) => {
                 </label>
                 <input
                   type="text"
-                  value={companyProfile.taxId}
-                  onChange={(e) => setCompanyProfile(prev => ({ ...prev, taxId: e.target.value }))}
+                  value={formData.taxId}
+                  onChange={(e) => setFormData(prev => ({ ...prev, taxId: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   placeholder="XX-XXXXXXX"
                 />
@@ -1570,8 +1714,8 @@ const CompanyProfileManagement = ({ db, userId }) => {
                 </label>
                 <input
                   type="text"
-                  value={companyProfile.licenseNumber}
-                  onChange={(e) => setCompanyProfile(prev => ({ ...prev, licenseNumber: e.target.value }))}
+                  value={formData.licenseNumber}
+                  onChange={(e) => setFormData(prev => ({ ...prev, licenseNumber: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   placeholder="M-44821"
                 />
@@ -1589,8 +1733,8 @@ const CompanyProfileManagement = ({ db, userId }) => {
                 </label>
                 <input
                   type="text"
-                  value={companyProfile.businessAddress}
-                  onChange={(e) => setCompanyProfile(prev => ({ ...prev, businessAddress: e.target.value }))}
+                  value={formData.businessAddress}
+                  onChange={(e) => setFormData(prev => ({ ...prev, businessAddress: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   placeholder="Enter business address"
                 />
@@ -1602,8 +1746,8 @@ const CompanyProfileManagement = ({ db, userId }) => {
                   </label>
                   <input
                     type="text"
-                    value={companyProfile.city}
-                    onChange={(e) => setCompanyProfile(prev => ({ ...prev, city: e.target.value }))}
+                    value={formData.city}
+                    onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                     placeholder="Enter city"
                   />
@@ -1613,8 +1757,8 @@ const CompanyProfileManagement = ({ db, userId }) => {
                     State
                   </label>
                   <select 
-                    value={companyProfile.state}
-                    onChange={(e) => setCompanyProfile(prev => ({ ...prev, state: e.target.value }))}
+                    value={formData.state}
+                    onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   >
                     <option value="">Select state</option>
@@ -1631,8 +1775,8 @@ const CompanyProfileManagement = ({ db, userId }) => {
                   </label>
                   <input
                     type="text"
-                    value={companyProfile.zipCode}
-                    onChange={(e) => setCompanyProfile(prev => ({ ...prev, zipCode: e.target.value }))}
+                    value={formData.zipCode}
+                    onChange={(e) => setFormData(prev => ({ ...prev, zipCode: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                     placeholder="Enter ZIP code"
                   />
@@ -1650,8 +1794,8 @@ const CompanyProfileManagement = ({ db, userId }) => {
                   Estimate Auto Paragraph
                 </label>
                 <textarea
-                  value={companyProfile.estimateAutoParagraph}
-                  onChange={(e) => setCompanyProfile(prev => ({ ...prev, estimateAutoParagraph: e.target.value }))}
+                  value={formData.estimateAutoParagraph}
+                  onChange={(e) => setFormData(prev => ({ ...prev, estimateAutoParagraph: e.target.value }))}
                   rows={4}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   placeholder="Enter text that will automatically appear on all estimates..."
@@ -1666,8 +1810,8 @@ const CompanyProfileManagement = ({ db, userId }) => {
                   Invoice Auto Paragraph
                 </label>
                 <textarea
-                  value={companyProfile.invoiceAutoParagraph}
-                  onChange={(e) => setCompanyProfile(prev => ({ ...prev, invoiceAutoParagraph: e.target.value }))}
+                  value={formData.invoiceAutoParagraph}
+                  onChange={(e) => setFormData(prev => ({ ...prev, invoiceAutoParagraph: e.target.value }))}
                   rows={4}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   placeholder="Enter text that will automatically appear on all invoices..."
@@ -1700,111 +1844,146 @@ const CompanyProfileManagement = ({ db, userId }) => {
   );
 };
 
+// Add type definitions at the top of the file
+interface StaffMember {
+  id: string;
+  userId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  homeAddress: string;
+  dateOfBirth: string;
+  socialSecurityNumber: string;
+  role: string;
+  businessUnit: string;
+  profilePicture: string;
+  color: string;
+  type: 'office' | 'technician';  // Changed from staffType to type
+  fullName: string;
+  createdAt: string;
+  updatedAt: string;
+  status: 'active' | 'inactive';
+}
+
+interface BusinessUnit {
+  id: string;
+  name: string;
+  officialName: string;
+  email: string;
+  bccEmail: string;
+  phoneNumber: string;
+  trade: string;
+  division: string;
+  tags: string[];
+  defaultWarehouse: string;
+  currency: string;
+  invoiceHeader: string;
+  invoiceMessage: string;
+  logo: string;
+  isActive: boolean;
+  userId: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface CompanyProfile {
+  id: string;
+  companyName: string;
+  phoneNumber: string;
+  email: string;
+  website: string;
+  taxId: string;
+  licenseNumber: string;
+  businessAddress: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  logo: string;
+  estimateAutoParagraph: string;
+  invoiceAutoParagraph: string;
+  userId: string;
+}
+
 const Settings: React.FC = () => {
-  const [expandedSections, setExpandedSections] = useState<string[]>(['Your Account']);
+  const [expandedSections, setExpandedSections] = useState<string[]>(['Staff Management']);
   const [selectedItem, setSelectedItem] = useState<string>('company-profile');
   const [searchTerm, setSearchTerm] = useState('');
-  const [showStaffForm, setShowStaffForm] = useState(false);
-  const [staffType, setStaffType] = useState<'office' | 'technician'>('office');
-  const [editingStaff, setEditingStaff] = useState(null);
+  
+  // Separate state for office staff and technicians
+  const [showOfficeStaffForm, setShowOfficeStaffForm] = useState(false);
+  const [showTechnicianForm, setShowTechnicianForm] = useState(false);
+  const [editingOfficeStaff, setEditingOfficeStaff] = useState<StaffMember | null>(null);
+  const [editingTechnician, setEditingTechnician] = useState<StaffMember | null>(null);
   
   // Firebase state
-  const [db, setDb] = useState(null);
-  const [userId, setUserId] = useState(null);
+  const [db, setDb] = useState<Firestore | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [officeStaff, setOfficeStaff] = useState([]);
-  const [technicians, setTechnicians] = useState([]);
+  const [error, setError] = useState<string | null>(null);
+  const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
+  const [technicians, setTechnicians] = useState<StaffMember[]>([]);
 
-  // Initialize Firebase
+  const loadStaff = async () => {
+    if (!db || !userId) return;
+
+    try {
+      const staffRef = collection(db, 'users', userId, 'staff');
+      const staffSnapshot = await getDocs(staffRef);
+      const staffList = staffSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as StaffMember[];
+
+      setOfficeStaff(staffList.filter(staff => staff.type === 'office'));
+      setTechnicians(staffList.filter(staff => staff.type === 'technician'));
+    } catch (err) {
+      console.error('Error loading staff:', err);
+      setError('Failed to load staff members. Please try again.');
+    }
+  };
+
   useEffect(() => {
     const initializeFirebase = async () => {
       try {
         if (typeof __firebase_config === 'undefined' || !__firebase_config) {
-          setError("Firebase configuration is missing");
-          setIsLoading(false);
-          return;
+          throw new Error("Firebase configuration is missing");
         }
         
-        let firebaseConfig;
-        if (typeof __firebase_config === 'string') {
-          firebaseConfig = JSON.parse(__firebase_config);
-        } else {
-          firebaseConfig = __firebase_config;
+        let firebaseConfig: FirebaseOptions;
+        try {
+          firebaseConfig = typeof __firebase_config === 'string' 
+            ? JSON.parse(__firebase_config) 
+            : __firebase_config;
+        } catch (parseError) {
+          throw new Error("Invalid Firebase configuration format");
         }
 
-        const app = initializeApp(firebaseConfig);
-        const firestore = getFirestore(app);
-        const auth = getAuth(app);
-        
+        const firebaseApp = initializeApp(firebaseConfig);
+        const firestore = getFirestore(firebaseApp);
         setDb(firestore);
-        
-        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+
+        const auth = getAuth(firebaseApp);
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
           if (user) {
             setUserId(user.uid);
-            setIsLoading(false);
+            loadStaff();
           } else {
-            try {
-              const userCredential = await signInAnonymously(auth);
-              setUserId(userCredential.user.uid);
-              setIsLoading(false);
-            } catch (authError) {
-              setError("Authentication failed");
-              setIsLoading(false);
-            }
+            setUserId(null);
           }
+          setIsLoading(false);
         });
-        
-        return () => unsubscribeAuth();
-      } catch (e) {
-        console.error("Error initializing Firebase:", e);
-        setError("Firebase initialization failed");
+
+        return () => unsubscribe();
+      } catch (err) {
+        console.error('Error initializing Firebase:', err);
+        setError('Failed to initialize application. Please try again.');
         setIsLoading(false);
       }
     };
 
     initializeFirebase();
   }, []);
-
-  // Load staff members
-  useEffect(() => {
-    if (!db || !userId) return;
-
-    // Load office staff
-    const officeQuery = query(
-      collection(db, 'staff'),
-      where("userId", "==", userId),
-      where("staffType", "==", "office")
-    );
-    
-    const unsubscribeOffice = onSnapshot(officeQuery, (querySnapshot) => {
-      const officeData = [];
-      querySnapshot.forEach((doc) => {
-        officeData.push({ id: doc.id, ...doc.data() });
-      });
-      setOfficeStaff(officeData);
-    });
-
-    // Load technicians
-    const techQuery = query(
-      collection(db, 'staff'),
-      where("userId", "==", userId),
-      where("staffType", "==", "technician")
-    );
-    
-    const unsubscribeTech = onSnapshot(techQuery, (querySnapshot) => {
-      const techData = [];
-      querySnapshot.forEach((doc) => {
-        techData.push({ id: doc.id, ...doc.data() });
-      });
-      setTechnicians(techData);
-    });
-    
-    return () => {
-      unsubscribeOffice();
-      unsubscribeTech();
-    };
-  }, [db, userId]);
 
   const toggleSection = (sectionName: string) => {
     setExpandedSections(prev => 
@@ -1818,53 +1997,77 @@ const Settings: React.FC = () => {
     setSelectedItem(path);
   };
 
-  const handleSaveStaff = useCallback(async (staffData, staffId = null) => {
-    if (db && userId) {
-      try {
-        const staffDataWithUser = {
-          ...staffData,
-          userId: userId
-        };
-        
-        if (staffId) {
-          // Update existing staff member
-          await updateDoc(doc(db, 'staff', staffId), staffDataWithUser);
-        } else {
-          // Create new staff member
-          const customId = `staff_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-          await setDoc(doc(db, 'staff', customId), staffDataWithUser);
-        }
-        
-        setShowStaffForm(false);
-        setEditingStaff(null);
-      } catch (e) {
-        console.error("Error saving staff member:", e);
-        setError("Failed to save staff member");
-      }
-    }
-  }, [db, userId]);
-
-  const handleDeleteStaff = useCallback(async (staffId) => {
-    if (db && window.confirm("Are you sure you want to delete this staff member?")) {
-      try {
-        await deleteDoc(doc(db, 'staff', staffId));
-      } catch (e) {
-        console.error("Error deleting staff member:", e);
-        setError("Failed to delete staff member");
-      }
-    }
-  }, [db]);
-
-  const handleEditStaff = (staffMember) => {
-    setEditingStaff(staffMember);
-    setStaffType(staffMember.staffType);
-    setShowStaffForm(true);
+  const handleEditOfficeStaff = (staff: StaffMember) => {
+    setEditingOfficeStaff(staff);
+    setShowOfficeStaffForm(true);
   };
 
-  const handleAddStaff = (type) => {
-    setEditingStaff(null);
-    setStaffType(type);
-    setShowStaffForm(true);
+  const handleEditTechnician = (staff: StaffMember) => {
+    setEditingTechnician(staff);
+    setShowTechnicianForm(true);
+  };
+
+  const handleAddOfficeStaff = () => {
+    setEditingOfficeStaff(null);
+    setShowOfficeStaffForm(true);
+  };
+
+  const handleAddTechnician = () => {
+    setEditingTechnician(null);
+    setShowTechnicianForm(true);
+  };
+
+  const handleSaveStaff = async (staffData: Omit<StaffMember, 'id'>) => {
+    if (!db || !userId) return;
+
+    try {
+      const staffRef = collection(db, 'users', userId, 'staff');
+      const staffDataWithUser = {
+        ...staffData,
+        userId,
+        type: staffData.type,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (staffData.type === 'office' && editingOfficeStaff) {
+        await updateDoc(doc(staffRef, editingOfficeStaff.id), staffDataWithUser);
+        setShowOfficeStaffForm(false);
+        setEditingOfficeStaff(null);
+      } else if (staffData.type === 'technician' && editingTechnician) {
+        await updateDoc(doc(staffRef, editingTechnician.id), staffDataWithUser);
+        setShowTechnicianForm(false);
+        setEditingTechnician(null);
+      } else {
+        // Add new staff
+        staffDataWithUser.createdAt = new Date().toISOString();
+        await addDoc(staffRef, staffDataWithUser);
+        if (staffData.type === 'office') {
+          setShowOfficeStaffForm(false);
+        } else {
+          setShowTechnicianForm(false);
+        }
+      }
+      // Refresh staff list
+      await loadStaff();
+    } catch (err) {
+      console.error('Error saving staff:', err);
+      setError('Failed to save staff member. Please try again.');
+    }
+  };
+
+  const handleDeleteStaff = async (staffId: string) => {
+    if (!db || !userId) return;
+
+    if (window.confirm('Are you sure you want to delete this staff member?')) {
+      try {
+        await deleteDoc(doc(db, 'users', userId, 'staff', staffId));
+        // Refresh staff list
+        await loadStaff();
+      } catch (err) {
+        console.error('Error deleting staff:', err);
+        setError('Failed to delete staff member. Please try again.');
+      }
+    }
   };
 
   const filteredSections = settingsSections.map(section => ({
@@ -1935,79 +2138,74 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
-      {/* Settings Content Area */}
-      <div className="flex-1 bg-gray-50 dark:bg-slate-900 overflow-y-auto p-6">
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-slate-900 p-6">
         {error && (
           <div className="mb-6 p-4 text-center text-red-600 bg-red-50 rounded-lg dark:bg-red-900/50 dark:text-red-300">
             <b>Error:</b> {error}
           </div>
         )}
-
-        {/* Office Staff Management */}
-        {selectedItem === 'office' && (
-          <div>
-            <div className="flex items-center mb-6">
-              <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Office Staff</h1>
-            </div>
-            
+        
+        {selectedItem === 'company-profile' && db && userId && (
+          <CompanyProfileManagement db={db} userId={userId} />
+        )}
+        {selectedItem === 'business-units' && db && userId && (
+          <BusinessUnitsManagement db={db} userId={userId} />
+        )}
+        
+        {selectedItem === 'office-staff' && db && userId && (
+          <div className="space-y-6">
             <StaffList
               staffType="office"
               staff={officeStaff}
-              onAdd={() => handleAddStaff('office')}
-              onEdit={handleEditStaff}
+              onAdd={handleAddOfficeStaff}
+              onEdit={handleEditOfficeStaff}
               onDelete={handleDeleteStaff}
+              onShowForm={() => setShowOfficeStaffForm(true)}
+              onSetEditingStaff={setEditingOfficeStaff}
             />
+            {showOfficeStaffForm && (
+              <StaffForm
+                onCancel={() => {
+                  setShowOfficeStaffForm(false);
+                  setEditingOfficeStaff(null);
+                }}
+                onSave={handleSaveStaff}
+                staffType="office"
+                editingStaff={editingOfficeStaff}
+              />
+            )}
           </div>
         )}
-
-        {/* Technicians Management */}
-        {selectedItem === 'technicians' && (
-          <div>
-            <div className="flex items-center mb-6">
-              <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Technicians</h1>
-            </div>
-            
+        
+        {selectedItem === 'technicians' && db && userId && (
+          <div className="space-y-6">
             <StaffList
               staffType="technician"
               staff={technicians}
-              onAdd={() => handleAddStaff('technician')}
-              onEdit={handleEditStaff}
+              onAdd={handleAddTechnician}
+              onEdit={handleEditTechnician}
               onDelete={handleDeleteStaff}
+              onShowForm={() => setShowTechnicianForm(true)}
+              onSetEditingStaff={setEditingTechnician}
             />
+            {showTechnicianForm && (
+              <StaffForm
+                onCancel={() => {
+                  setShowTechnicianForm(false);
+                  setEditingTechnician(null);
+                }}
+                onSave={handleSaveStaff}
+                staffType="technician"
+                editingStaff={editingTechnician}
+              />
+            )}
           </div>
         )}
-
-        {/* Business Units Management */}
-        {selectedItem === 'business-units' && (
-          <BusinessUnitsManagement db={db} userId={userId} />
-        )}
-
-        {/* Enhanced Company Profile */}
-        {selectedItem === 'company-profile' && (
-          <CompanyProfileManagement db={db} userId={userId} />
-        )}
-        
-        {/* Placeholder for other settings pages */}
-        {selectedItem !== 'company-profile' && selectedItem !== 'office' && selectedItem !== 'technicians' && selectedItem !== 'business-units' && (
-           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-slate-700">
-              <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 capitalize">{selectedItem.replace(/-/g, ' ')}</h1>
-              <p className="mt-2 text-gray-600 dark:text-gray-400">Settings for this section will appear here.</p>
-           </div>
+        {selectedItem === 'gl-accounts' && (
+          <GLAccounts />
         )}
       </div>
-
-      {/* Staff Form Modal */}
-      {showStaffForm && (
-        <StaffForm
-          onCancel={() => {
-            setShowStaffForm(false);
-            setEditingStaff(null);
-          }}
-          onSave={handleSaveStaff}
-          staffType={staffType}
-          editingStaff={editingStaff}
-        />
-      )}
     </div>
   );
 };

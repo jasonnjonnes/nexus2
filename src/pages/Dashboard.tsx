@@ -26,9 +26,10 @@ import {
 } from 'chart.js';
 import { initializeApp } from "firebase/app";
 import { 
-  getFirestore, collection, onSnapshot, query, where, orderBy
+  getFirestore, collection, onSnapshot, query, where, orderBy, Firestore, 
+  DocumentData, QuerySnapshot, Unsubscribe
 } from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { getAuth, signInAnonymously, onAuthStateChanged, Auth } from "firebase/auth";
 
 // Register ChartJS components
 ChartJS.register(
@@ -42,6 +43,102 @@ ChartJS.register(
   ArcElement
 );
 
+// Define interfaces for type safety
+interface Job {
+  id: string;
+  status?: string;
+  startDate?: string;
+  createdAt?: string;
+  technicianId?: string;
+  assignedTo?: string;
+  assignedTechnicians?: Array<{
+    id?: string;
+    technicianId?: string;
+    name?: string;
+  }>;
+  customerName?: string;
+  jobType?: string;
+  businessUnitId?: string;
+  businessUnit?: string;
+  [key: string]: any;
+}
+
+interface Invoice {
+  id: string;
+  status?: string;
+  total?: number;
+  createdAt?: string;
+  jobId?: string;
+  businessUnitId?: string;
+  businessUnit?: string;
+  [key: string]: any;
+}
+
+interface Estimate {
+  id: string;
+  status?: string;
+  total?: number;
+  createdAt?: string;
+  jobId?: string;
+  businessUnitId?: string;
+  businessUnit?: string;
+  [key: string]: any;
+}
+
+interface Customer {
+  id: string;
+  [key: string]: any;
+}
+
+interface BusinessUnit {
+  id: string;
+  name?: string;
+  businessUnitName?: string;
+  [key: string]: any;
+}
+
+interface Technician {
+  id: string;
+  name?: string;
+  fullName?: string;
+  displayName?: string;
+  firstName?: string;
+  lastName?: string;
+  [key: string]: any;
+}
+
+interface TechPerformance {
+  id: string;
+  name: string;
+  jobsCompleted: number;
+  totalRevenue: number;
+}
+
+interface Metrics {
+  totalRevenue: number;
+  totalSales: number;
+  jobStatusCounts: Record<string, number>;
+  upcomingJobs: Job[];
+  techPerformance: TechPerformance[];
+}
+
+interface FilteredData {
+  jobs: Job[];
+  invoices: Invoice[];
+  estimates: Estimate[];
+}
+
+interface DateRange {
+  start: Date;
+  end: Date;
+}
+
+declare global {
+  interface Window {
+    __firebase_config: any;
+  }
+}
+
 const Dashboard: React.FC = () => {
   // Theme detection
   const [currentTheme, setCurrentTheme] = useState(
@@ -49,17 +146,17 @@ const Dashboard: React.FC = () => {
   );
 
   // Firebase state
-  const [db, setDb] = useState(null);
-  const [userId, setUserId] = useState(null);
+  const [db, setDb] = useState<Firestore | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Data state
-  const [jobs, setJobs] = useState([]);
-  const [invoices, setInvoices] = useState([]);
-  const [estimates, setEstimates] = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [businessUnits, setBusinessUnits] = useState([]);
-  const [technicians, setTechnicians] = useState([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [estimates, setEstimates] = useState<Estimate[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
 
   // Filter state
   const [dateRange, setDateRange] = useState('today');
@@ -88,16 +185,16 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     const initializeFirebase = async () => {
       try {
-        if (typeof __firebase_config === 'undefined' || !__firebase_config) {
+        if (typeof window.__firebase_config === 'undefined' || !window.__firebase_config) {
           setIsLoading(false);
           return;
         }
         
         let firebaseConfig;
-        if (typeof __firebase_config === 'string') {
-          firebaseConfig = JSON.parse(__firebase_config);
+        if (typeof window.__firebase_config === 'string') {
+          firebaseConfig = JSON.parse(window.__firebase_config);
         } else {
-          firebaseConfig = __firebase_config;
+          firebaseConfig = window.__firebase_config;
         }
 
         const app = initializeApp(firebaseConfig);
@@ -136,7 +233,7 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     if (!db || !userId) return;
 
-    const unsubscribes = [];
+    const unsubscribes: Unsubscribe[] = [];
 
     // Load jobs
     const jobsQuery = query(
@@ -144,10 +241,10 @@ const Dashboard: React.FC = () => {
       where("userId", "==", userId),
       orderBy("createdAt", "desc")
     );
-    unsubscribes.push(onSnapshot(jobsQuery, (querySnapshot) => {
-      const jobsData = [];
+    unsubscribes.push(onSnapshot(jobsQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
+      const jobsData: Job[] = [];
       querySnapshot.forEach((doc) => {
-        jobsData.push({ id: doc.id, ...doc.data() });
+        jobsData.push({ id: doc.id, ...doc.data() } as Job);
       });
       setJobs(jobsData);
     }));
@@ -157,10 +254,10 @@ const Dashboard: React.FC = () => {
       collection(db, 'invoices'),
       where("userId", "==", userId)
     );
-    unsubscribes.push(onSnapshot(invoicesQuery, (querySnapshot) => {
-      const invoicesData = [];
+    unsubscribes.push(onSnapshot(invoicesQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
+      const invoicesData: Invoice[] = [];
       querySnapshot.forEach((doc) => {
-        invoicesData.push({ id: doc.id, ...doc.data() });
+        invoicesData.push({ id: doc.id, ...doc.data() } as Invoice);
       });
       setInvoices(invoicesData);
     }));
@@ -170,10 +267,10 @@ const Dashboard: React.FC = () => {
       collection(db, 'estimates'),
       where("userId", "==", userId)
     );
-    unsubscribes.push(onSnapshot(estimatesQuery, (querySnapshot) => {
-      const estimatesData = [];
+    unsubscribes.push(onSnapshot(estimatesQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
+      const estimatesData: Estimate[] = [];
       querySnapshot.forEach((doc) => {
-        estimatesData.push({ id: doc.id, ...doc.data() });
+        estimatesData.push({ id: doc.id, ...doc.data() } as Estimate);
       });
       setEstimates(estimatesData);
     }));
@@ -183,10 +280,10 @@ const Dashboard: React.FC = () => {
       collection(db, 'customers'),
       where("userId", "==", userId)
     );
-    unsubscribes.push(onSnapshot(customersQuery, (querySnapshot) => {
-      const customersData = [];
+    unsubscribes.push(onSnapshot(customersQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
+      const customersData: Customer[] = [];
       querySnapshot.forEach((doc) => {
-        customersData.push({ id: doc.id, ...doc.data() });
+        customersData.push({ id: doc.id, ...doc.data() } as Customer);
       });
       setCustomers(customersData);
     }));
@@ -196,10 +293,10 @@ const Dashboard: React.FC = () => {
       collection(db, 'businessUnits'),
       where("userId", "==", userId)
     );
-    unsubscribes.push(onSnapshot(businessUnitsQuery, (querySnapshot) => {
-      const businessUnitsData = [];
+    unsubscribes.push(onSnapshot(businessUnitsQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
+      const businessUnitsData: BusinessUnit[] = [];
       querySnapshot.forEach((doc) => {
-        businessUnitsData.push({ id: doc.id, ...doc.data() });
+        businessUnitsData.push({ id: doc.id, ...doc.data() } as BusinessUnit);
       });
       setBusinessUnits(businessUnitsData);
     }));
@@ -210,10 +307,10 @@ const Dashboard: React.FC = () => {
       where("userId", "==", userId),
       where("staffType", "==", "technician")
     );
-    unsubscribes.push(onSnapshot(staffQuery, (querySnapshot) => {
-      const techniciansData = [];
+    unsubscribes.push(onSnapshot(staffQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
+      const techniciansData: Technician[] = [];
       querySnapshot.forEach((doc) => {
-        techniciansData.push({ id: doc.id, ...doc.data() });
+        techniciansData.push({ id: doc.id, ...doc.data() } as Technician);
       });
       console.log('Loaded technicians:', techniciansData);
       setTechnicians(techniciansData);
@@ -225,7 +322,7 @@ const Dashboard: React.FC = () => {
   }, [db, userId]);
 
   // Get date range for filtering
-  const getDateRange = () => {
+  const getDateRange = (): DateRange => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
@@ -263,7 +360,7 @@ const Dashboard: React.FC = () => {
   };
 
   // Helper function to check if a job is assigned to a specific technician
-  const isJobAssignedToTechnician = (job, technicianId) => {
+  const isJobAssignedToTechnician = (job: Job, technicianId: string): boolean => {
     if (!job.assignedTechnicians || !Array.isArray(job.assignedTechnicians)) {
       // Fallback for jobs that might use a single technician field
       return job.technicianId === technicianId || job.assignedTo === technicianId;
@@ -276,29 +373,29 @@ const Dashboard: React.FC = () => {
   };
 
   // Filter data based on current filters
-  const filteredData = useMemo(() => {
+  const filteredData = useMemo((): FilteredData => {
     const { start, end } = getDateRange();
     
-    const filterByDate = (item) => {
-      const itemDate = new Date(item.createdAt || item.startDate);
+    const filterByDate = (item: Job | Invoice | Estimate): boolean => {
+      const itemDate = new Date(item.createdAt || item.startDate || '');
       return itemDate >= start && itemDate < end;
     };
 
-    const filterByBusinessUnit = (item) => {
+    const filterByBusinessUnit = (item: Job | Invoice | Estimate): boolean => {
       if (selectedBusinessUnit === 'all') return true;
       return item.businessUnitId === selectedBusinessUnit || item.businessUnit === selectedBusinessUnit;
     };
 
-    const filterByTechnician = (item) => {
+    const filterByTechnician = (item: Job | Invoice | Estimate): boolean => {
       if (selectedTechnician === 'all') return true;
       
       // For jobs, check if the technician is assigned
-      if (item.assignedTechnicians || item.technicianId || item.assignedTo) {
-        return isJobAssignedToTechnician(item, selectedTechnician);
+      if ('assignedTechnicians' in item || 'technicianId' in item || 'assignedTo' in item) {
+        return isJobAssignedToTechnician(item as Job, selectedTechnician);
       }
       
       // For invoices/estimates, check if they're related to jobs assigned to the technician
-      if (item.jobId) {
+      if ('jobId' in item) {
         const relatedJob = jobs.find(job => job.id === item.jobId);
         if (relatedJob) {
           return isJobAssignedToTechnician(relatedJob, selectedTechnician);
@@ -316,7 +413,7 @@ const Dashboard: React.FC = () => {
   }, [jobs, invoices, estimates, dateRange, selectedBusinessUnit, selectedTechnician, customStartDate, customEndDate]);
 
   // Calculate metrics
-  const metrics = useMemo(() => {
+  const metrics = useMemo((): Metrics => {
     const { jobs: filteredJobs, invoices: filteredInvoices, estimates: filteredEstimates } = filteredData;
     
     // Total revenue from completed invoices
@@ -332,25 +429,25 @@ const Dashboard: React.FC = () => {
       const status = job.status || 'pending';
       acc[status] = (acc[status] || 0) + 1;
       return acc;
-    }, {});
+    }, {} as Record<string, number>);
 
     // Upcoming appointments (next 7 days)
     const nextWeek = new Date();
     nextWeek.setDate(nextWeek.getDate() + 7);
     const upcomingJobs = jobs.filter(job => {
-      const jobDate = new Date(job.startDate);
+      const jobDate = new Date(job.startDate || '');
       const now = new Date();
       return jobDate >= now && jobDate <= nextWeek && (job.status === 'scheduled' || job.status === 'confirmed');
     }).slice(0, 10);
 
     // Technician performance based on real technician data
-    const techPerformance = {};
+    const techPerformance: Record<string, TechPerformance> = {};
     
     // Initialize with actual technicians from Firebase
     technicians.forEach(tech => {
       techPerformance[tech.id] = {
         id: tech.id,
-        name: tech.fullName || tech.displayName || `${tech.firstName} ${tech.lastName}`.trim() || tech.name,
+        name: tech.fullName || tech.displayName || `${tech.firstName || ''} ${tech.lastName || ''}`.trim() || tech.name || '',
         jobsCompleted: 0,
         totalRevenue: 0
       };
@@ -362,7 +459,7 @@ const Dashboard: React.FC = () => {
         // Check all assigned technicians for this job
         if (job.assignedTechnicians && Array.isArray(job.assignedTechnicians)) {
           job.assignedTechnicians.forEach(assignment => {
-            const techId = assignment.technicianId || assignment.id;
+            const techId = assignment.technicianId || assignment.id || '';
             if (techPerformance[techId]) {
               techPerformance[techId].jobsCompleted += 1;
               
@@ -370,14 +467,14 @@ const Dashboard: React.FC = () => {
               const relatedInvoice = invoices.find(inv => inv.jobId === job.id && inv.status === 'paid');
               if (relatedInvoice) {
                 // Split revenue among assigned technicians
-                const revenueShare = (relatedInvoice.total || 0) / job.assignedTechnicians.length;
+                const revenueShare = (relatedInvoice.total || 0) / job.assignedTechnicians!.length;
                 techPerformance[techId].totalRevenue += revenueShare;
               }
             }
           });
         } else if (job.technicianId || job.assignedTo) {
           // Handle legacy single technician assignment
-          const techId = job.technicianId || job.assignedTo;
+          const techId = job.technicianId || job.assignedTo || '';
           if (techPerformance[techId]) {
             techPerformance[techId].jobsCompleted += 1;
             
@@ -404,8 +501,8 @@ const Dashboard: React.FC = () => {
 
   // Generate revenue trend data for the last 18 months
   const generateRevenueData = () => {
-    const months = [];
-    const revenues = [];
+    const months: string[] = [];
+    const revenues: number[] = [];
     const now = new Date();
     
     for (let i = 17; i >= 0; i--) {
@@ -414,7 +511,7 @@ const Dashboard: React.FC = () => {
       
       // Get invoices for this month
       const monthlyInvoices = invoices.filter(invoice => {
-        const invoiceDate = new Date(invoice.createdAt);
+        const invoiceDate = new Date(invoice.createdAt || '');
         return invoiceDate >= monthDate && invoiceDate < nextMonthDate && invoice.status === 'paid';
       });
       
@@ -471,7 +568,7 @@ const Dashboard: React.FC = () => {
   };
 
   // Chart options
-  const lineOptions = {
+  const lineOptions: any = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -488,7 +585,9 @@ const Dashboard: React.FC = () => {
       y: {
         beginAtZero: true,
         ticks: {
-          callback: (value: number) => `$${value.toLocaleString()}`,
+          callback: function(value: number) {
+            return `$${value.toLocaleString()}`;
+          },
           color: isDarkMode ? '#9ca3af' : '#6b7280',
         },
         grid: {
@@ -506,11 +605,12 @@ const Dashboard: React.FC = () => {
     },
   };
 
-  const doughnutOptions = {
+  const doughnutOptions: any = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: {
+        display: true,
         position: 'right' as const,
         labels: {
           color: isDarkMode ? '#f3f4f6' : '#1f2937',
@@ -518,6 +618,11 @@ const Dashboard: React.FC = () => {
           padding: 20,
         }
       },
+      tooltip: {
+        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
+        titleColor: isDarkMode ? '#ffffff' : '#000000',
+        bodyColor: isDarkMode ? '#ffffff' : '#000000',
+      }
     },
     cutout: '70%',
   };
@@ -569,7 +674,7 @@ const Dashboard: React.FC = () => {
               <option value="all">All Technicians</option>
               {technicians.map(tech => (
                 <option key={tech.id} value={tech.id}>
-                  {tech.fullName || tech.displayName || `${tech.firstName} ${tech.lastName}`.trim() || tech.name}
+                  {tech.fullName || tech.displayName || `${tech.firstName || ''} ${tech.lastName || ''}`.trim() || tech.name || ''}
                 </option>
               ))}
             </select>
