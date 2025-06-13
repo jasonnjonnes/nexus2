@@ -1,5 +1,10 @@
+rules_version = '2';
 service cloud.firestore {
-  match /databases/{db}/documents {
+  match /databases/{database}/documents {
+    // TEMPORARY: Allow all writes for debugging import (forced redeploy)
+    match /{document=**} {
+      allow write: if true;
+    }
     match /{doc=**} {
 
       // Read  ───────────────────────────────

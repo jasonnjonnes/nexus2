@@ -1,10 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, X, MapPin, Calendar, Plus, Phone, User, Building, Mail } from 'lucide-react';
-import { initializeApp } from "firebase/app";
-import { 
-  getFirestore, collection, addDoc, onSnapshot, doc, setDoc, query, where, getDocs
-} from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { db } from '../firebase';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import {
+  collection,
+  addDoc,
+  onSnapshot,
+  doc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  setDoc,
+  getDocs
+} from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 
 // Helper function to generate job numbers
@@ -219,8 +228,6 @@ const Inbound: React.FC = () => {
   const [technicians, setTechnicians] = useState([]);
   const [businessUnits, setBusinessUnits] = useState([]);
   const [jobTypes, setJobTypes] = useState([]);
-  const [db, setDb] = useState(null);
-  const [userId, setUserId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -244,55 +251,8 @@ const Inbound: React.FC = () => {
     requireSignature: false
   });
 
-  // Initialize Firebase
-  useEffect(() => {
-    const initializeFirebase = async () => {
-      try {
-        if (typeof __firebase_config === 'undefined' || !__firebase_config) {
-          setError("Firebase configuration is missing");
-          setIsLoading(false);
-          return;
-        }
-        
-        let firebaseConfig;
-        if (typeof __firebase_config === 'string') {
-          firebaseConfig = JSON.parse(__firebase_config);
-        } else {
-          firebaseConfig = __firebase_config;
-        }
-
-        const app = initializeApp(firebaseConfig);
-        const firestore = getFirestore(app);
-        const auth = getAuth(app);
-        
-        setDb(firestore);
-        
-        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-          if (user) {
-            setUserId(user.uid);
-            setIsLoading(false);
-          } else {
-            try {
-              const userCredential = await signInAnonymously(auth);
-              setUserId(userCredential.user.uid);
-              setIsLoading(false);
-            } catch (authError) {
-              setError("Authentication failed");
-              setIsLoading(false);
-            }
-          }
-        });
-        
-        return () => unsubscribeAuth();
-      } catch (e) {
-        console.error("Error initializing Firebase:", e);
-        setError("Firebase initialization failed");
-        setIsLoading(false);
-      }
-    };
-
-    initializeFirebase();
-  }, []);
+  const { user } = useFirebaseAuth();
+  const userId = user?.uid || null;
 
   // Load customers
   useEffect(() => {

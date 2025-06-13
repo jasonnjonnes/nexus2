@@ -19,8 +19,10 @@ export function BasicProtectedRoute({ children, adminOnly = false }: ProtectedRo
     );
   }
 
+  console.log('ProtectedRoute:', { user, loading });
+
   // Not logged in - redirect to login
-  if (!user) {
+  if (!loading && !user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

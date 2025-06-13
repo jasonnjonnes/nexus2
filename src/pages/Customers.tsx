@@ -16,6 +16,7 @@ import InvoiceImportModal from '../components/InvoiceImportModal';
 import EstimateImportModal from '../components/EstimateImportModal';
 import LocationImportModal from '../components/LocationImportModal';
 import { Menu } from '@headlessui/react';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 
 // --- Helper Functions ---
 const getStatusColor = (status) => {
@@ -149,6 +150,7 @@ const Customers = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const customersPerPage = 25;
   const [unsubscribeCustomers, setUnsubscribeCustomers] = useState(null);
+  const { companyId } = useFirebaseAuth();
 
   // Listen for auth changes
   useEffect(() => {
@@ -555,6 +557,7 @@ const Customers = () => {
               onClose={() => setShowCustomerImport(false)}
               onComplete={() => { resumeCustomerListener(); }}
               userId={userId}
+              companyId={companyId}
               pauseListener={pauseCustomerListener}
             />
           )}

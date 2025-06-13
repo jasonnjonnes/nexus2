@@ -10,7 +10,7 @@ import { initializeApp } from "firebase/app";
 import { 
   getFirestore, doc, getDoc, onSnapshot, updateDoc, addDoc, collection, query, where
 } from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 
 // Helper functions
 const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
@@ -73,14 +73,9 @@ const JobDetail = () => {
             setUserId(user.uid);
             setIsLoading(false);
           } else {
-            try {
-              const userCredential = await signInAnonymously(auth);
-              setUserId(userCredential.user.uid);
-              setIsLoading(false);
-            } catch (authError) {
-              setError("Authentication failed");
-              setIsLoading(false);
-            }
+            // Redirect to login or show a message
+            window.location.href = '/login';
+            setIsLoading(false);
           }
         });
         

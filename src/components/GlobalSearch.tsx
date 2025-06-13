@@ -4,11 +4,9 @@ import {
   DollarSign, ShoppingCart, Calendar, Mail, User, Wrench
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { initializeApp } from "firebase/app";
-import { 
-  getFirestore, collection, onSnapshot, query, where
-} from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { db } from '../firebase';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 interface SearchResult {
   id: string;
@@ -38,8 +36,8 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
   const [isLoading, setIsLoading] = useState(false);
   
   // Firebase state
-  const [db, setDb] = useState(null);
-  const [userId, setUserId] = useState(null);
+  const { user } = useFirebaseAuth();
+  const userId = user?.uid || null;
   
   // Data state
   const [customers, setCustomers] = useState([]);
@@ -59,49 +57,6 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
     { value: 'invoices', label: 'Invoices', icon: DollarSign },
     { value: 'purchase_orders', label: 'Purchase Orders', icon: ShoppingCart },
   ];
-
-  // Initialize Firebase and load data
-  useEffect(() => {
-    const initializeFirebase = async () => {
-      try {
-        if (typeof __firebase_config === 'undefined' || !__firebase_config) {
-          return;
-        }
-        
-        let firebaseConfig;
-        if (typeof __firebase_config === 'string') {
-          firebaseConfig = JSON.parse(__firebase_config);
-        } else {
-          firebaseConfig = __firebase_config;
-        }
-
-        const app = initializeApp(firebaseConfig);
-        const firestore = getFirestore(app);
-        const auth = getAuth(app);
-        
-        setDb(firestore);
-        
-        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-          if (user) {
-            setUserId(user.uid);
-          } else {
-            try {
-              const userCredential = await signInAnonymously(auth);
-              setUserId(userCredential.user.uid);
-            } catch (authError) {
-              console.error("Authentication failed:", authError);
-            }
-          }
-        });
-        
-        return () => unsubscribeAuth();
-      } catch (e) {
-        console.error("Error initializing Firebase:", e);
-      }
-    };
-
-    initializeFirebase();
-  }, []);
 
   // Load data from Firebase
   useEffect(() => {

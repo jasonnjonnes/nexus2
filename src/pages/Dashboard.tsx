@@ -24,12 +24,18 @@ import {
   Legend,
   ArcElement
 } from 'chart.js';
-import { initializeApp } from "firebase/app";
-import { 
-  getFirestore, collection, onSnapshot, query, where, orderBy, Firestore, 
-  DocumentData, QuerySnapshot, Unsubscribe
-} from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged, Auth } from "firebase/auth";
+import { db } from '../firebase';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import {
+  query,
+  collection,
+  where,
+  orderBy,
+  onSnapshot,
+  DocumentData,
+  QuerySnapshot,
+  Unsubscribe
+} from 'firebase/firestore';
 
 // Register ChartJS components
 ChartJS.register(
@@ -146,8 +152,8 @@ const Dashboard: React.FC = () => {
   );
 
   // Firebase state
-  const [db, setDb] = useState<Firestore | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  const { user } = useFirebaseAuth();
+  const userId = user?.uid || null;
   const [isLoading, setIsLoading] = useState(true);
 
   // Data state
@@ -179,54 +185,6 @@ const Dashboard: React.FC = () => {
 
     observer.observe(document.documentElement, { attributes: true });
     return () => observer.disconnect();
-  }, []);
-
-  // Initialize Firebase
-  useEffect(() => {
-    const initializeFirebase = async () => {
-      try {
-        if (typeof window.__firebase_config === 'undefined' || !window.__firebase_config) {
-          setIsLoading(false);
-          return;
-        }
-        
-        let firebaseConfig;
-        if (typeof window.__firebase_config === 'string') {
-          firebaseConfig = JSON.parse(window.__firebase_config);
-        } else {
-          firebaseConfig = window.__firebase_config;
-        }
-
-        const app = initializeApp(firebaseConfig);
-        const firestore = getFirestore(app);
-        const auth = getAuth(app);
-        
-        setDb(firestore);
-        
-        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-          if (user) {
-            setUserId(user.uid);
-            setIsLoading(false);
-          } else {
-            try {
-              const userCredential = await signInAnonymously(auth);
-              setUserId(userCredential.user.uid);
-              setIsLoading(false);
-            } catch (authError) {
-              console.error("Authentication failed:", authError);
-              setIsLoading(false);
-            }
-          }
-        });
-        
-        return () => unsubscribeAuth();
-      } catch (e) {
-        console.error("Error initializing Firebase:", e);
-        setIsLoading(false);
-      }
-    };
-
-    initializeFirebase();
   }, []);
 
   // Load data from Firebase

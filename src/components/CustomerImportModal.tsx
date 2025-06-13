@@ -9,6 +9,7 @@ interface CustomerImportModalProps {
   onClose: () => void;
   onComplete?: () => void;
   userId?: string;
+  companyId?: string;
   pauseListener?: () => void;
 }
 
@@ -40,7 +41,7 @@ const FIELD_MAP: { [key: string]: string } = {
   'Membership Termination Date': 'membershipTerminationDate'
 };
 
-const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClose, onComplete, userId, pauseListener }) => {
+const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClose, onComplete, userId, companyId, pauseListener }) => {
   const [step, setStep] = useState<'upload' | 'preview' | 'importing' | 'done'>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [rows, setRows] = useState<any[]>([]);
@@ -55,21 +56,65 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
     const f = e.target.files?.[0];
     if (!f) return;
     setFile(f);
-    const data = await f.arrayBuffer();
-    const wb = XLSX.read(data);
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
-    setRows(json as any[]);
-    setHeaders(Object.keys(json[0] || {}));
-    setStep('preview');
+    try {
+      const data = await f.arrayBuffer();
+      const wb = XLSX.read(data, { 
+        type: 'array',
+        raw: false  // Convert numbers and dates to strings
+      });
+      
+      // Get the first sheet
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      if (!ws) {
+        throw new Error('No worksheet found in the file');
+      }
+
+      // Convert to JSON with safe defaults
+      const json = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { 
+        raw: false,
+        dateNF: 'yyyy-mm-dd' // Format dates consistently
+      });
+
+      if (!Array.isArray(json) || json.length === 0) {
+        throw new Error('No data found in the worksheet');
+      }
+
+      // Clean and validate the data
+      const cleanedRows = json.map(row => {
+        const cleanedRow: Record<string, string> = {};
+        Object.keys(row).forEach(key => {
+          // Convert all values to strings, handle null/undefined
+          const val = row[key];
+          cleanedRow[key] = val == null ? '' : String(val).trim();
+        });
+        return cleanedRow;
+      });
+
+      setRows(cleanedRows);
+      setHeaders(Object.keys(cleanedRows[0] || {}));
+      setStep('preview');
+    } catch (error: any) {
+      console.error('Error reading file:', error);
+      setErrors([`Error reading file: ${error?.message || 'Unknown error'}`]);
+      setStep('upload');
+    }
   };
 
   const handleImport = async () => {
+    if (!companyId) {
+      setErrors(prev => [...prev, 'Error: companyId is missing. Please reload and try again.']);
+      return;
+    }
     if (pauseListener) pauseListener();
     setStep('importing');
     setErrors([]);
     setCurrentImportIndex(0);
     let success = 0, fail = 0;
+    let lastId: string | null = null;
+    let lastCustomer: any = null;
+
+    console.log('Starting import with rows:', rows.length);
+    console.log('First row sample:', rows[0]);
 
     // Constants for optimization - increased parallel processing
     const MAX_BATCH_SIZE = 450; // Slightly reduced to account for relationship updates
@@ -95,8 +140,7 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
         const currentBatchStart = batchStart + i * BATCH_SIZE;
         const currentBatchEnd = Math.min(currentBatchStart + BATCH_SIZE, totalRows);
         
-        // Add a small delay between batch starts to prevent overwhelming the database
-        await new Promise(resolve => setTimeout(resolve, i * 50));
+        console.log(`Processing batch ${i + 1}, rows ${currentBatchStart + 1} to ${currentBatchEnd}`);
 
         // Create a promise for this batch
         const batchPromise = (async () => {
@@ -108,42 +152,105 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
           // Process each row in the batch
           for (const row of batchRows) {
             try {
+              console.log('Processing row:', row['Customer Name']);
+              
               if (!row['Customer Name']) { 
+                console.log('Skipping row - no customer name');
                 batchFail++; 
                 continue; 
               }
 
               const customer = {};
+              console.log('Starting to process fields for customer:', row['Customer Name']);
+              
               // Process headers and build customer object
               for (const col of headers) {
-                const key = FIELD_MAP[col] || col;
-                let val = row[col];
-                
-                // Handle special fields
-                if (['Customer Tags', 'Location Tags', 'tags', 'locationTags'].includes(col)) {
-                  val = typeof val === 'string' ? val.split(',').map((t) => t.trim()).filter(Boolean) : Array.isArray(val) ? val : [];
+                try {
+                  console.log(`Processing field ${col} for ${row['Customer Name']}`);
+                  const key = FIELD_MAP[col] || col;
+                  let val = row[col];
+
+                  // Skip processing if value is null/undefined
+                  if (val == null) {
+                    console.log(`Field ${col} is null/undefined, setting to empty string`);
+                    (customer as any)[key] = '';
+                    continue;
+                  }
+
+                  // Convert to string and trim
+                  val = String(val).trim();
+                  console.log(`Field ${col} value after trim:`, val);
+                  
+                  // Handle special fields
+                  if (['Customer Tags', 'Location Tags', 'tags', 'locationTags'].includes(col)) {
+                    console.log(`Processing tags for ${col}`);
+                    (customer as any)[key] = val ? val.split(',').map((t: string) => t.trim()).filter(Boolean) : [];
+                    continue;
+                  }
+
+                  // Handle boolean fields
+                  if (['Taxable', 'Do Not Service'].includes(col)) {
+                    console.log(`Processing boolean for ${col}:`, val);
+                    (customer as any)[key] = ['true', 'yes', '1', 'TRUE'].includes(val.toLowerCase());
+                    continue;
+                  }
+
+                  // Handle numeric fields
+                  if (['Completed Jobs', 'Completed Revenue', 'Jobs Canceled', 'Lifetime Jobs Completed', 
+                       'Lifetime Invoices', 'Total Sales', 'Customers Lifetime Revenue', 'Lifetime Jobs Booked',
+                       'Total Conversion Rate by Customer'].includes(col)) {
+                    console.log(`Processing numeric for ${col}:`, val);
+                    // Remove currency symbols and convert to number
+                    const numVal = parseFloat(val.replace(/[^0-9.-]+/g, ''));
+                    (customer as any)[key] = isNaN(numVal) ? 0 : numVal;
+                    continue;
+                  }
+
+                  // Handle date fields
+                  if (['Created On', 'Member From', 'Member To', 'Membership Termination Date'].includes(col)) {
+                    console.log(`Processing date for ${col}:`, val);
+                    try {
+                      const date = new Date(val);
+                      (customer as any)[key] = isNaN(date.getTime()) ? '' : date.toISOString();
+                    } catch (dateError) {
+                      console.error(`Error processing date for ${col}:`, dateError);
+                      (customer as any)[key] = '';
+                    }
+                    continue;
+                  }
+                  
+                  // Handle multiple phones/emails
+                  if (col === 'Phone Number') {
+                    console.log(`Processing phone for ${row['Customer Name']}:`, val);
+                    const phones = val ? val.split(',').map((t: string) => t.trim()).filter(Boolean) : [];
+                    (customer as any).phone = phones[0] || '';
+                    if (phones.length > 1) (customer as any).otherPhones = phones.slice(1);
+                    continue;
+                  }
+                  if (col === 'Email') {
+                    console.log(`Processing email for ${row['Customer Name']}:`, val);
+                    const emails = val ? val.split(',').map((t: string) => t.trim()).filter(Boolean) : [];
+                    (customer as any).email = emails[0] || '';
+                    if (emails.length > 1) (customer as any).otherEmails = emails.slice(1);
+                    continue;
+                  }
+
+                  // Default case: store as string
+                  (customer as any)[key] = val;
+                } catch (fieldError) {
+                  console.error(`Error processing field ${col} for ${row['Customer Name']}:`, fieldError);
+                  console.error('Field value was:', row[col]);
+                  // Continue processing other fields even if one fails
+                  (customer as any)[FIELD_MAP[col] || col] = '';
                 }
-                if (['Taxable', 'Do Not Service'].includes(col)) {
-                  val = String(val).toLowerCase() === 'yes' || String(val) === '1' || val === true;
-                }
-                
-                // Handle multiple phones/emails
-                if (col === 'Phone Number' && typeof val === 'string') {
-                  const phones = val.split(',').map((t) => t.trim()).filter(Boolean);
-                  (customer as any).phone = phones[0] || '';
-                  if (phones.length > 1) (customer as any).otherPhones = phones.slice(1);
-                  continue;
-                }
-                if (col === 'Email' && typeof val === 'string') {
-                  const emails = val.split(',').map((t) => t.trim()).filter(Boolean);
-                  (customer as any).email = emails[0] || '';
-                  if (emails.length > 1) (customer as any).otherEmails = emails.slice(1);
-                  continue;
-                }
-                (customer as any)[key] = val;
               }
+
+              console.log('Finished processing fields for:', row['Customer Name']);
+              console.log('Processed customer object:', customer);
+
               // Add locations array if missing
               if ((customer as any).billingAddress && !Array.isArray((customer as any).locations)) {
+                console.log('Adding location for:', row['Customer Name']);
                 (customer as any).locations = [{
                   id: `loc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
                   name: 'Primary Location',
@@ -152,17 +259,32 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
                   phone: (customer as any).phone || '',
                 }];
               }
+
               // Helper to clean Firestore IDs (no slashes, non-empty)
               const cleanId = (raw: any): string => {
-                if (typeof raw !== 'string' || raw.trim() === '') return '';
+                if (typeof raw !== 'string' || !raw.trim()) return '';
                 return raw.trim().replace(/\//g, '_');
               };
 
               const providedId = cleanId((customer as any).id);
-              const id = providedId || doc(collection(db, 'customers')).id;
+              console.log('Cleaned ID for', row['Customer Name'], ':', providedId);
+              
+              if (!providedId) {
+                throw new Error('Invalid or missing Customer ID');
+              }
+
+              const id = providedId;
+              lastId = id;
+              lastCustomer = customer;
               
               // Add to batch
-              batch.set(doc(db, 'customers', id), { 
+              console.log('About to add to batch:', {
+                companyId,
+                id,
+                db,
+                customer
+              });
+              batch.set(doc(db, 'companies', companyId!, 'customers', id), { 
                 ...customer, 
                 id, 
                 ...(userId ? { userId } : {}),
@@ -170,7 +292,11 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
               }, { merge: true });
               
               batchSuccess++;
+              console.log('Successfully processed:', row['Customer Name']);
             } catch (e) {
+              console.error('Error processing row:', row['Customer Name']);
+              console.error('Full error:', e);
+              console.error('Row data:', row);
               batchFail++;
               setErrors((prev) => [...prev, `Error processing row: ${JSON.stringify(row)} - ${e}`]);
             }
@@ -178,10 +304,11 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
 
           // Commit the batch
           try {
+            console.log(`Committing batch with ${batchSuccess} successes and ${batchFail} failures`);
             await batch.commit();
             return { success: batchSuccess, fail: batchFail };
           } catch (e) {
-            // Enhanced error logging for Firestore permission errors
+            console.error('Batch commit failed:', e);
             let errorMsg = `Batch commit failed for rows ${currentBatchStart + 1}-${currentBatchEnd}: `;
             if (e && typeof e === 'object') {
               errorMsg += `\n  code: ${(e as any).code || ''}`;
@@ -200,6 +327,7 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
 
       // Wait for all parallel batches to complete
       const results = await Promise.all(batchPromises);
+      console.log('Batch results:', results);
       
       // Update progress
       const batchResults = results.reduce((acc, result) => ({
@@ -212,8 +340,19 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
       setCurrentImportIndex(Math.min(batchStart + BATCH_SIZE * PARALLEL_BATCHES, totalRows));
     }
 
+    console.log('Import complete. Success:', success, 'Fail:', fail);
     setSuccessCount(success);
     setFailCount(fail);
+    // Log summary and last used companyId/id/db/customer at the end for easier debugging
+    console.log('IMPORT SUMMARY:', {
+      companyId,
+      lastId,
+      db,
+      lastCustomer,
+      totalRows: rows.length,
+      success,
+      fail
+    });
     setStep('done');
     if (onComplete) onComplete();
   };

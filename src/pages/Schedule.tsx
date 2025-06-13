@@ -82,14 +82,9 @@ const Schedule: React.FC = () => {
             setUserId(user.uid);
             setIsLoading(false);
           } else {
-            try {
-              const userCredential = await signInAnonymously(auth);
-              setUserId(userCredential.user.uid);
-              setIsLoading(false);
-            } catch (authError) {
-              setError("Authentication failed");
-              setIsLoading(false);
-            }
+            // Redirect to login or show a message
+            window.location.href = '/login';
+            setIsLoading(false);
           }
         });
         

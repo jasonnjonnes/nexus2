@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import {
   getAuth,
   onAuthStateChanged,
@@ -7,9 +7,12 @@ import {
   createUserWithEmailAndPassword,
   User as FirebaseUser,
   browserLocalPersistence,
-  setPersistence
+  setPersistence,
+  GoogleAuthProvider,
+  signInWithPopup
 } from 'firebase/auth';
 import { initializeApp } from 'firebase/app';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 // Load Firebase config injected by Vite
 const firebaseCfg: any = typeof __firebase_config === 'string' ? JSON.parse(__firebase_config) : __firebase_config;
@@ -30,6 +33,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -43,27 +47,34 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
 
+  const navigate = useNavigate();
+  const location = useLocation();
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
-
       if (u) {
         try {
-          const tokenRes = await u.getIdTokenResult(true); // force refresh so recently set claims are present
+          const tokenRes = await u.getIdTokenResult(); // do not force refresh
           setCompanyId((tokenRes.claims as any).companyId ?? null);
           setRole((tokenRes.claims as any).role ?? null);
+          console.log('User signed in:', u.email, 'Claims:', tokenRes.claims);
         } catch (err) {
           console.warn('Failed to load custom claims', err);
+        }
+        // Redirect to dashboard if not already there or on login
+        if (location.pathname === '/login' || location.pathname === '/') {
+          navigate('/dashboard');
         }
       } else {
         setCompanyId(null);
         setRole(null);
+        console.log('No user signed in');
       }
-
       setLoading(false);
     });
     return () => unsub();
-  }, []);
+  }, [navigate]);
 
   const wrap = async (fn: () => Promise<any>) => {
     setError(null);
@@ -82,7 +93,20 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const register = (email: string, password: string) => wrap(() => createUserWithEmailAndPassword(auth, email, password));
   const logout = () => wrap(() => signOut(auth));
 
-  const value: AuthContextType = {
+  const signInWithGoogle = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const value = useMemo(() => ({
     user,
     loading,
     error,
@@ -90,8 +114,9 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     role,
     login,
     register,
-    logout
-  };
+    logout,
+    signInWithGoogle
+  }), [user, loading, error, companyId, role]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
