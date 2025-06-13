@@ -13,11 +13,11 @@ function afterInit() {
 }
 
 /**
- * Helper—create company shell if it doesn't exist.
+ * Helper—create tenant shell if it doesn't exist.
  */
-async function ensureCompany(companyId: string) {
+async function ensureTenant(tenantId: string) {
   const db = admin.firestore();
-  const ref = db.doc(`companies/${companyId}`);
+  const ref = db.doc(`tenants/${tenantId}`);
   const snap = await ref.get();
   if (!snap.exists) {
     await ref.set({
@@ -30,10 +30,10 @@ async function ensureCompany(companyId: string) {
  * Determines role for new signup.
  * If no admin exists, return 'admin', otherwise 'csr'.
  */
-async function determineRole(companyId: string): Promise<'admin' | 'csr'> {
+async function determineRole(tenantId: string): Promise<'admin' | 'csr'> {
   const db = admin.firestore();
   const adminsSnap = await db
-    .collection(`companies/${companyId}/members`)
+    .collection(`tenants/${tenantId}/members`)
     .where('role', '==', 'admin')
     .limit(1)
     .get();
@@ -44,20 +44,20 @@ async function determineRole(companyId: string): Promise<'admin' | 'csr'> {
  * Cloud Function: runs on every new user signup
  */
 export const setRoleOnSignup = functions.auth.user().onCreate(async (user) => {
-  // 1. Figure out company ID. For PoC we use domain slug. Adjust to your flow.
-  const emailDomain = user.email?.split('@')[1] ?? 'defaultco.com';
-  const companyId = emailDomain.split('.')[0]; // acme.com -> acme
+  // 1. Figure out tenant ID. For PoC we use domain slug. Adjust to your flow.
+  const emailDomain = user.email?.split('@')[1] ?? 'defaulttenant.com';
+  const tenantId = emailDomain.split('.')[0]; // acme.com -> acme
 
-  // 2. Ensure the company doc exists
-  await ensureCompany(companyId);
+  // 2. Ensure the tenant doc exists
+  await ensureTenant(tenantId);
 
   // 3. Decide if this user should be admin or csr
-  const role: 'admin' | 'csr' = await determineRole(companyId);
+  const role: 'admin' | 'csr' = await determineRole(tenantId);
 
   // 4. Write the member record (so we can query later)
   await admin
     .firestore()
-    .doc(`companies/${companyId}/members/${user.uid}`)
+    .doc(`tenants/${tenantId}/members/${user.uid}`)
     .set({
       uid: user.uid,
       email: user.email,
@@ -66,7 +66,7 @@ export const setRoleOnSignup = functions.auth.user().onCreate(async (user) => {
     });
 
   // 5. Set custom claims – these drive rules & app UI
-  await admin.auth().setCustomUserClaims(user.uid, { companyId, role });
+  await admin.auth().setCustomUserClaims(user.uid, { tenantId, role });
 
-  console.log(`Assigned role ${role} to new user ${user.uid} for company ${companyId}`);
+  console.log(`Assigned role ${role} to new user ${user.uid} for tenant ${tenantId}`);
 }); 

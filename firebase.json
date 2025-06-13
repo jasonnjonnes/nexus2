@@ -15,5 +15,8 @@
       "firebase-debug.*.log",
       "functions"
     ]
+  },
+  "functions": {
+    "source": "functions"
   }
 }
