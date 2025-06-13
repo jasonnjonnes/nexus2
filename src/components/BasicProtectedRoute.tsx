@@ -1,6 +1,6 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useBasicAuth } from '../contexts/BasicAuthContext';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -8,7 +8,7 @@ interface ProtectedRouteProps {
 }
 
 export function BasicProtectedRoute({ children, adminOnly = false }: ProtectedRouteProps) {
-  const { user, loading } = useBasicAuth();
+  const { user, loading } = useFirebaseAuth();
   const location = useLocation();
 
   if (loading) {
@@ -22,11 +22,6 @@ export function BasicProtectedRoute({ children, adminOnly = false }: ProtectedRo
   // Not logged in - redirect to login
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
-  }
-
-  // Admin route check
-  if (adminOnly && !user.isAdmin) {
-    return <Navigate to="/unauthorized" replace />;
   }
 
   return <>{children}</>;

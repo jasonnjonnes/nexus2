@@ -152,8 +152,14 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
                   phone: (customer as any).phone || '',
                 }];
               }
-              // Use provided id or auto-generate
-              const id = (customer as any).id || doc(collection(db, 'customers')).id;
+              // Helper to clean Firestore IDs (no slashes, non-empty)
+              const cleanId = (raw: any): string => {
+                if (typeof raw !== 'string' || raw.trim() === '') return '';
+                return raw.trim().replace(/\//g, '_');
+              };
+
+              const providedId = cleanId((customer as any).id);
+              const id = providedId || doc(collection(db, 'customers')).id;
               
               // Add to batch
               batch.set(doc(db, 'customers', id), { 
@@ -175,7 +181,16 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
             await batch.commit();
             return { success: batchSuccess, fail: batchFail };
           } catch (e) {
-            setErrors((prev) => [...prev, `Batch commit failed for rows ${currentBatchStart + 1}-${currentBatchEnd}: ${e}`]);
+            // Enhanced error logging for Firestore permission errors
+            let errorMsg = `Batch commit failed for rows ${currentBatchStart + 1}-${currentBatchEnd}: `;
+            if (e && typeof e === 'object') {
+              errorMsg += `\n  code: ${(e as any).code || ''}`;
+              errorMsg += `\n  message: ${(e as any).message || e}`;
+              if ((e as any).stack) errorMsg += `\n  stack: ${(e as any).stack}`;
+            } else {
+              errorMsg += String(e);
+            }
+            setErrors((prev) => [...prev, errorMsg]);
             return { success: 0, fail: batchRows.length };
           }
         })();

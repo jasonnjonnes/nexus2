@@ -1,74 +1,73 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useBasicAuth } from '../contexts/BasicAuthContext';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import TopNavigation from './TopNavigation';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { user, logout } = useBasicAuth();
+  const { user, logout } = useFirebaseAuth();
   const navigate = useNavigate();
 
+  /* ------------------------------------------------------------------
+   * Theme (light / dark) handling for the whole application
+   * ------------------------------------------------------------------ */
+  const getInitialTheme = () => {
+    if (typeof window === 'undefined') return 'light';
+    return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
+  };
+
+  const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  };
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  /* ------------------------------------------------------------------
+   * Sidebar toggle placeholder – can be extended later if needed
+   * ------------------------------------------------------------------ */
+  const toggleSidebar = () => {
+    /* Future implementation: open / close sidebar */
+  };
+
+  /* ------------------------------------------------------------------
+   * Logout helper (kept from previous layout)
+   * ------------------------------------------------------------------ */
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <nav className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex">
-              {/* Logo */}
-              <div className="flex-shrink-0 flex items-center">
-                <span className="text-lg font-bold">Company App</span>
-              </div>
-              
-              {/* Navigation Links */}
-              <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
-                <a 
-                  href="/" 
-                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
-                  Dashboard
-                </a>
-                <a 
-                  href="/customers" 
-                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
-                  Customers
-                </a>
-                <a 
-                  href="/settings" 
-                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
-                  Settings
-                </a>
-              </div>
-            </div>
-            
-            {/* User Menu */}
-            <div className="flex items-center">
-              <div className="hidden md:ml-4 md:flex-shrink-0 md:flex md:items-center">
-                <div className="ml-3 relative flex items-center space-x-4">
-                  <div className="text-sm font-medium text-gray-700">
-                    {user?.name} {user?.isAdmin && <span className="text-xs text-indigo-500">(Admin)</span>}
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    className="px-3 py-1 text-sm text-gray-800 bg-gray-200 rounded-md hover:bg-gray-300"
-                  >
-                    Logout
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-gray-100 dark:bg-slate-900 text-gray-900 dark:text-gray-100 transition-colors">
+      {/* Top navigation bar with global search, links, dark-mode toggle, etc. */}
+      <TopNavigation
+        toggleSidebar={toggleSidebar}
+        theme={theme}
+        toggleTheme={toggleTheme}
+      />
 
+      {/* Optional user/logout section – can be styled / positioned as desired */}
+      <div className="hidden md:flex justify-end items-center px-6 py-2 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-700">
+        <span className="mr-4 text-sm font-medium">
+          {user?.email}
+        </span>
+        <button
+          onClick={handleLogout}
+          className="px-3 py-1 text-sm text-gray-800 dark:text-gray-100 bg-gray-200 dark:bg-slate-700 rounded-md hover:bg-gray-300 dark:hover:bg-slate-600"
+        >
+          Logout
+        </button>
+      </div>
+
+      {/* Page content */}
       <main className="py-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {children}

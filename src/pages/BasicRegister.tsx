@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useBasicAuth } from '../contexts/BasicAuthContext';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 
 export function BasicRegister() {
   const [formData, setFormData] = useState({
-    username: '',
+    email: '',
     password: '',
     confirmPassword: '',
     name: ''
   });
-  const { register, error, loading } = useBasicAuth();
+  const { register, error, loading } = useFirebaseAuth();
   const navigate = useNavigate();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -29,7 +29,7 @@ export function BasicRegister() {
     }
     
     try {
-      await register(formData.username, formData.password, formData.name);
+      await register(formData.email, formData.password);
       navigate('/');
     } catch (err) {
       // Error is already handled by the auth context
@@ -69,17 +69,17 @@ export function BasicRegister() {
               />
             </div>
             <div>
-              <label htmlFor="username" className="sr-only">
-                Username
+              <label htmlFor="email" className="sr-only">
+                Email
               </label>
               <input
-                id="username"
-                name="username"
-                type="text"
+                id="email"
+                name="email"
+                type="email"
                 required
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Username"
-                value={formData.username}
+                placeholder="Email"
+                value={formData.email}
                 onChange={handleChange}
               />
             </div>

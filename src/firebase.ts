@@ -1,31 +1,12 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { initializeApp, getApps } from 'firebase/app';
+import { getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
-// Your web app's Firebase configuration
-const firebaseConfig = {
-  // You'll need to replace these with your actual Firebase config values
-  // from the Firebase Console
-  apiKey: process.env.VITE_FIREBASE_API_KEY,
-  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.VITE_FIREBASE_APP_ID,
-  measurementId: process.env.VITE_FIREBASE_MEASUREMENT_ID
-};
+// Load compile-time injected config (see vite.config.ts)
+const cfg: any = typeof __firebase_config === 'string' ? JSON.parse(__firebase_config) : __firebase_config;
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+// Prevent re-initialisation in hot-reload / multiple imports
+export const app = getApps().length ? getApps()[0] : initializeApp(cfg, '[WEB]');
 
-// Initialize Auth and Firestore
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-// Connect to emulators in development
-if (process.env.NODE_ENV === 'development') {
-  connectAuthEmulator(auth, 'http://localhost:9099');
-  connectFirestoreEmulator(db, 'localhost', 8080);
-}
-
-export { auth, db }; 
+export const db = getFirestore(app);
+export const auth = getAuth(app); 

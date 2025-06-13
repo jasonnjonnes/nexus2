@@ -4,12 +4,12 @@ import {
   FileText, Package, Folder, Calculator, Camera, MoreHorizontal, ChevronDown, ChevronRight,
   RefreshCw, Filter, Save, Play, DollarSign, Settings, Image, Video, Tag, Copy, BarChart3, CopyPlus, Power
 } from 'lucide-react';
-import { initializeApp } from "firebase/app";
+import { auth as sharedAuth, db as sharedDb } from '../firebase';
 import { 
   getFirestore, Firestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, 
   query, where, writeBatch, serverTimestamp, getDocs, setDoc, getDoc
 } from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged } from 'firebase/auth';
 import { Dialog } from '@headlessui/react';
 import { Category, CategoryFormState, Service, ServiceFormState, Material, MaterialFormState, PriceRule, PriceRuleForm } from '../types/pricebook';
 import { ImportedItem } from '../utils/pricebookImport';
@@ -119,7 +119,7 @@ const Pricebook: React.FC = () => {
   const servicePhotoInputRef = useRef<HTMLInputElement>(null);
   const materialPhotoInputRef = useRef<HTMLInputElement>(null);
 
-  const [db, setDb] = useState<Firestore | null>(null);
+  const [db] = useState<Firestore | null>(sharedDb);
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -395,28 +395,17 @@ const Pricebook: React.FC = () => {
     }
   }, [db, userId]);
 
+  // Authenticate listener – redirects to /login if signed-out
   useEffect(() => {
-    try {
-      if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-        const app = initializeApp(__firebase_config);
-        const auth = getAuth(app);
-        setDb(getFirestore(app));
-        
-        onAuthStateChanged(auth, async (user) => {
-          if (user) {
-            setUserId(user.uid);
-          } else {
-            const userCredential = await signInAnonymously(auth);
-            setUserId(userCredential.user.uid);
-          }
-        });
+    const unsub = onAuthStateChanged(sharedAuth, (user) => {
+      if (user) {
+        setUserId(user.uid);
+        setIsLoading(false);
       } else {
-        setError("Firebase config not found.");
+        window.location.href = '/login';
       }
-    } catch(e) {
-      console.error(e);
-      setError("Firebase initialization failed.");
-    }
+    });
+    return () => unsub();
   }, []);
 
   useEffect(() => {

@@ -24,9 +24,166 @@ import { format, addDays, subDays } from 'date-fns';
 import { createPortal } from 'react-dom';
 import { initializeApp } from "firebase/app";
 import { 
-  getFirestore, collection, onSnapshot, query, where, updateDoc, doc, addDoc
+  getFirestore, collection, onSnapshot, query, where, updateDoc, doc, addDoc,
+  Firestore, DocumentData, QuerySnapshot, DocumentReference
 } from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { getAuth, signInAnonymously, onAuthStateChanged, Auth, User as FirebaseUser } from "firebase/auth";
+import { db as sharedDb, auth as sharedAuth } from '../firebase';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+
+// Define TypeScript interfaces for the components
+interface Job {
+  id: string;
+  originalId?: string;
+  title: string;
+  type: string;
+  address: string;
+  phone: string;
+  notes: string | any[]; // Support both string notes and array of note objects
+  startTime: string;
+  endTime: string;
+  technicianId?: string | null; // Can be null
+  technician?: string;
+  status: string;
+  jobNumber: string;
+  startDate: string;
+  customerId?: string;
+  locationId?: string;
+  priority: string;
+  appointmentIndex?: number;
+  isMultiTech?: boolean;
+  appointments?: JobAppointment[];
+  description?: string;
+  serviceLocation?: {
+    address?: string;
+    phone?: string;
+  };
+  jobType?: string;
+  [key: string]: any;
+}
+
+interface NewJob extends Omit<Job, 'id'> {
+  id?: string;
+}
+
+interface JobAppointment {
+  id: string;
+  technician: string;
+  status: string;
+  startDate: string;
+  startTime: string;
+  endTime: string;
+}
+
+interface Technician {
+  id: string;
+  name: string;
+  status: string;
+  clockStatus: string;
+  role: string;
+  businessUnit: string;
+  profilePicture?: string;
+  color: string;
+}
+
+interface Customer {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+}
+
+interface Shift {
+  id: string;
+  staffId: string;
+  startDate: string;
+  startTime: string;
+  endTime: string;
+  type: string;
+}
+
+interface JobFormData {
+  jobType: string;
+  businessUnit: string;
+  priority: string;
+  startDate: string;
+  startTime: string;
+  technician: string;
+  summary: string;
+  sendConfirmation: boolean;
+}
+
+interface DragState {
+  jobId: string;
+  type: 'move' | 'resize-left' | 'resize-right';
+  offsetX: number;
+  offsetY: number;
+  initialJobDuration: number;
+  originalJob: Job;
+  initialMouseX: number;
+  initialMouseY: number;
+  isDraggingFreely?: boolean;
+  mouseX: number;
+  mouseY: number;
+  hoverHour: number | null;
+  hoverTechnicianId: string | null;
+}
+
+interface PendingJobAssignment {
+  job: Job;
+  technicianId: string;
+  technicianName: string;
+  startTime: string;
+}
+
+interface PopoverPosition {
+  top: number;
+  left: number;
+  visible: boolean;
+}
+
+interface CalendarPickerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  selectedDate: Date;
+  onDateSelect: (date: Date) => void;
+}
+
+interface ShiftWarningModalProps {
+  isOpen: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  technicianName: string;
+}
+
+interface JobCardProps {
+  job: Job;
+  onDragStart: (e: React.MouseEvent, job: Job, type: 'move' | 'resize-left' | 'resize-right') => void;
+  isDragging: boolean;
+  level: number;
+  technicianColor: string;
+  onClick: (job: Job) => void;
+}
+
+interface JobDetailsModalProps {
+  job: Job | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (job: Job) => Promise<void>;
+  technicians: Technician[];
+}
+
+interface NewJobPanelProps {
+  isOpen: boolean;
+  onClose: () => void;
+  customers: Customer[];
+  technicians: Technician[];
+  onJobCreated: () => void;
+  db: Firestore | null;
+  userId: string | null;
+  companyId: string | null;
+}
 
 // --- CONSTANTS & HELPERS ---
 const PIXELS_PER_HOUR = 160;
@@ -34,21 +191,21 @@ const TOTAL_TIMELINE_WIDTH = PIXELS_PER_HOUR * 24;
 const JOB_CARD_HEIGHT = 64;
 const JOB_CARD_TOP_OFFSET = 4;
 
-const timeToMinutes = (timeStr) => {
+const timeToMinutes = (timeStr: string): number => {
   if (!timeStr || !timeStr.includes(':')) return 0;
   const [hours, minutes] = timeStr.split(':').map(Number);
   return hours * 60 + minutes;
 };
 
-const minutesToTime = (minutes) => {
+const minutesToTime = (minutes: number): string => {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 };
 
-const getJobStackingLevels = (jobsForTechnician) => {
+const getJobStackingLevels = (jobsForTechnician: Job[]): { jobLevels: Map<string, number>; totalLevels: number } => {
   const sortedJobs = [...jobsForTechnician].sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
-  const levels = [];
+  const levels: Job[][] = [];
   sortedJobs.forEach(job => {
     let placed = false;
     for (const level of levels) {
@@ -61,7 +218,7 @@ const getJobStackingLevels = (jobsForTechnician) => {
     }
     if (!placed) levels.push([job]);
   });
-  const jobLevels = new Map();
+  const jobLevels = new Map<string, number>();
   levels.forEach((levelJobs, levelIndex) => {
     levelJobs.forEach(job => jobLevels.set(job.id, levelIndex));
   });
@@ -69,12 +226,12 @@ const getJobStackingLevels = (jobsForTechnician) => {
 };
 
 // Helper function to format current date for comparison
-const formatDateForComparison = (date) => {
+const formatDateForComparison = (date: Date): string => {
   return format(date, 'yyyy-MM-dd');
 };
 
 // Helper function to parse time string to 24-hour format
-const parseTimeString = (timeStr) => {
+const parseTimeString = (timeStr: string): number | null => {
   if (!timeStr) return null;
   
   const timeRegex = /(\d{1,2}):(\d{2})\s*(AM|PM)?/i;
@@ -96,7 +253,7 @@ const parseTimeString = (timeStr) => {
 };
 
 // Helper to calculate duration between two times
-const calculateDuration = (startTime, endTime) => {
+const calculateDuration = (startTime: string, endTime: string): { hours: number; minutes: number; totalMinutes: number } => {
   const startMinutes = timeToMinutes(startTime);
   const endMinutes = timeToMinutes(endTime);
   const totalMinutes = endMinutes - startMinutes;
@@ -108,26 +265,27 @@ const calculateDuration = (startTime, endTime) => {
 };
 
 // Helper to apply duration to start time
-const applyDuration = (startTime, hours, minutes) => {
+const applyDuration = (startTime: string, hours: number, minutes: number): string => {
   const startMinutes = timeToMinutes(startTime);
   const totalMinutes = startMinutes + (hours * 60) + minutes;
   return minutesToTime(totalMinutes);
 };
+
 // Generate job number helper
-const generateJobNumber = () => {
+const generateJobNumber = (): string => {
   const timestamp = Date.now();
   const random = Math.floor(Math.random() * 1000);
   return `JOB-${timestamp}-${random}`;
 };
 
 // --- CALENDAR PICKER COMPONENT ---
-const CalendarPicker = ({ isOpen, onClose, selectedDate, onDateSelect }) => {
+const CalendarPicker: React.FC<CalendarPickerProps> = ({ isOpen, onClose, selectedDate, onDateSelect }) => {
   const [currentMonth, setCurrentMonth] = useState(new Date(selectedDate));
-  const calendarRef = useRef(null);
+  const calendarRef = useRef<HTMLDivElement | null>(null);
   
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (calendarRef.current && !calendarRef.current.contains(event.target)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
         onClose();
       }
     };
@@ -152,7 +310,7 @@ const CalendarPicker = ({ isOpen, onClose, selectedDate, onDateSelect }) => {
   const firstDayOfWeek = firstDayOfMonth.getDay();
   const daysInMonth = lastDayOfMonth.getDate();
   
-  const days = [];
+  const days: (Date | null)[] = [];
   
   // Add empty cells for days before the first day of the month
   for (let i = 0; i < firstDayOfWeek; i++) {
@@ -164,12 +322,12 @@ const CalendarPicker = ({ isOpen, onClose, selectedDate, onDateSelect }) => {
     days.push(new Date(year, month, day));
   }
 
-  const handleDateClick = (date) => {
+  const handleDateClick = (date: Date) => {
     onDateSelect(date);
     onClose();
   };
 
-  const navigateMonth = (direction) => {
+  const navigateMonth = (direction: number) => {
     setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + direction, 1));
   };
 
@@ -245,12 +403,12 @@ const CalendarPicker = ({ isOpen, onClose, selectedDate, onDateSelect }) => {
 };
 
 // --- ENHANCED JOB DETAILS MODAL WITH EDITING ---
-const JobDetailsModal = ({ job, isOpen, onClose, onSave, technicians }) => {
-  const modalRef = useRef(null);
+const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, isOpen, onClose, onSave, technicians }) => {
+  const modalRef = useRef<HTMLDivElement | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [editedJob, setEditedJob] = useState(job || {});
+  const [editedJob, setEditedJob] = useState<Job | null>(null);
   const [newNote, setNewNote] = useState('');
-  const [selectedTechnicians, setSelectedTechnicians] = useState([]);
+  const [selectedTechnicians, setSelectedTechnicians] = useState<string[]>([]);
 
   useEffect(() => {
     if (job) {
@@ -265,14 +423,14 @@ const JobDetailsModal = ({ job, isOpen, onClose, onSave, technicians }) => {
         setSelectedTechnicians([]);
       }
     } else {
-      setEditedJob({});
+      setEditedJob(null);
       setSelectedTechnicians([]);
     }
   }, [job]);
 
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (modalRef.current && !modalRef.current.contains(event.target)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
         onClose();
       }
     };
@@ -288,7 +446,7 @@ const JobDetailsModal = ({ job, isOpen, onClose, onSave, technicians }) => {
 
   if (!isOpen || !job) return null;
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (status: string): string => {
     switch (status) {
       case 'scheduled': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
       case 'in_progress': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
@@ -298,7 +456,7 @@ const JobDetailsModal = ({ job, isOpen, onClose, onSave, technicians }) => {
     }
   };
 
-  const getPriorityColor = (priority) => {
+  const getPriorityColor = (priority: string): string => {
     switch (priority) {
       case 'Emergency': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
       case 'High': return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200';
@@ -307,26 +465,37 @@ const JobDetailsModal = ({ job, isOpen, onClose, onSave, technicians }) => {
     }
   };
 
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setEditedJob(prev => ({ ...prev, [name]: value }));
+    setEditedJob(prev => {
+      if (!prev) return null;
+      return { ...prev, [name]: value } as Job;
+    });
   };
 
-  const handleTechnicianAdd = (technicianName) => {
+  // Helper to safely get values from the edited job
+  const getEditedJobValue = <T extends keyof Job>(key: T, defaultValue: Job[T]): Job[T] => {
+    if (!editedJob) return defaultValue;
+    return (editedJob[key] !== undefined) ? editedJob[key] : defaultValue;
+  };
+
+  const handleTechnicianAdd = (technicianName: string) => {
     if (!selectedTechnicians.includes(technicianName)) {
       setSelectedTechnicians(prev => [...prev, technicianName]);
     }
   };
 
-  const handleTechnicianRemove = (technicianName) => {
+  const handleTechnicianRemove = (technicianName: string) => {
     setSelectedTechnicians(prev => prev.filter(tech => tech !== technicianName));
   };
 
   const handleSave = async () => {
+    if (!job || !editedJob) return;
+    
     try {
       // Create appointments array from selected technicians
       const appointments = selectedTechnicians.map((techName, index) => ({
-        id: `${(editedJob.jobNumber || job.jobNumber)}-${index + 1}`,
+        id: `${editedJob.jobNumber || job.jobNumber}-${index + 1}`,
         technician: techName,
         status: 'Scheduled',
         startDate: editedJob.startDate || job.startDate,
@@ -342,7 +511,7 @@ const JobDetailsModal = ({ job, isOpen, onClose, onSave, technicians }) => {
 
       // Use originalId if available (for multi-tech jobs), otherwise use regular id
       const jobId = job.originalId || job.id;
-      await onSave({ ...updatedJob, id: jobId });
+      await onSave({ ...updatedJob, id: jobId } as Job);
       setIsEditing(false);
     } catch (error) {
       console.error('Error saving job:', error);
@@ -350,6 +519,8 @@ const JobDetailsModal = ({ job, isOpen, onClose, onSave, technicians }) => {
   };
 
   const handleCancel = () => {
+    if (!job) return;
+    
     setEditedJob(job);
     if (job.appointments && job.appointments.length > 0) {
       setSelectedTechnicians(job.appointments.map(apt => apt.technician));
@@ -362,27 +533,27 @@ const JobDetailsModal = ({ job, isOpen, onClose, onSave, technicians }) => {
   };
 
   const addNote = async () => {
-    if (newNote.trim()) {
-      const note = {
-        id: `note_${Date.now()}`,
-        text: newNote.trim(),
-        author: 'Current User',
-        timestamp: new Date().toISOString()
-      };
-      
-      const updatedNotes = [...((editedJob && editedJob.notes) || []), note];
-      const updatedJob = { ...editedJob, notes: updatedNotes };
-      
-      await onSave(updatedJob);
-      setEditedJob(updatedJob);
-      setNewNote('');
-    }
+    if (!job || !newNote.trim()) return;
+    
+    const note = {
+      id: `note_${Date.now()}`,
+      text: newNote.trim(),
+      author: 'Current User',
+      timestamp: new Date().toISOString()
+    };
+    
+    const updatedNotes = [...(((editedJob as Job).notes as any[]) || []), note];
+    const updatedJob: Job = { ...editedJob!, notes: updatedNotes, id: editedJob!.id || job.id };
+    await onSave(updatedJob);
+    setEditedJob(updatedJob);
+    setNewNote('');
   };
 
-  const deleteNote = async (noteId) => {
-    const updatedNotes = ((editedJob && editedJob.notes) || []).filter(note => note.id !== noteId);
-    const updatedJob = { ...editedJob, notes: updatedNotes };
+  const deleteNote = async (noteId: string) => {
+    if (!job) return;
     
+    const updatedNotes = (((editedJob as Job).notes as any[]) || []).filter((note: any) => note.id !== noteId);
+    const updatedJob: Job = { ...editedJob!, notes: updatedNotes, id: editedJob!.id || job.id };
     await onSave(updatedJob);
     setEditedJob(updatedJob);
   };
@@ -532,7 +703,10 @@ const JobDetailsModal = ({ job, isOpen, onClose, onSave, technicians }) => {
                           calculateDuration(editedJob.startTime || job.startTime, editedJob.endTime) : 
                           { hours: 1, minutes: 0 };
                         const newEndTime = applyDuration(newStartTime, currentDuration.hours, currentDuration.minutes);
-                        setEditedJob(prev => ({ ...prev, startTime: newStartTime, endTime: newEndTime }));
+                        setEditedJob(prev => {
+                          if (!prev) return null;
+                          return { ...prev, startTime: newStartTime, endTime: newEndTime, id: prev.id || job.id };
+                        });
                       }}
                       className="border border-gray-300 dark:border-slate-600 rounded px-2 py-1 text-xs bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                     />
@@ -563,7 +737,10 @@ const JobDetailsModal = ({ job, isOpen, onClose, onSave, technicians }) => {
                             return 0;
                           })();
                           const newEndTime = applyDuration(editedJob?.startTime || job?.startTime || '09:00', hours, minutes);
-                          setEditedJob(prev => ({ ...prev, endTime: newEndTime }));
+                          setEditedJob(prev => {
+                            if (!prev) return null;
+                            return { ...prev, endTime: newEndTime, id: prev.id || job.id };
+                          });
                         }}
                         className="border border-gray-300 dark:border-slate-600 rounded px-1 py-1 text-xs bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 w-12"
                       >
@@ -590,7 +767,10 @@ const JobDetailsModal = ({ job, isOpen, onClose, onSave, technicians }) => {
                             return 1;
                           })();
                           const newEndTime = applyDuration(editedJob?.startTime || job?.startTime || '09:00', hours, minutes);
-                          setEditedJob(prev => ({ ...prev, endTime: newEndTime }));
+                          setEditedJob(prev => {
+                            if (!prev) return null;
+                            return { ...prev, endTime: newEndTime, id: prev.id || job.id };
+                          });
                         }}
                         className="border border-gray-300 dark:border-slate-600 rounded px-1 py-1 text-xs bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 w-12"
                       >
@@ -789,11 +969,11 @@ const JobDetailsModal = ({ job, isOpen, onClose, onSave, technicians }) => {
 };
 
 // --- NEW JOB PANEL ---
-const NewJobPanel = ({ isOpen, onClose, customers, technicians, onJobCreated, db, userId }) => {
+const NewJobPanel: React.FC<NewJobPanelProps> = ({ isOpen, onClose, customers, technicians, onJobCreated, db, userId, companyId }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [filteredCustomers, setFilteredCustomers] = useState([]);
-  const [jobForm, setJobForm] = useState({
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
+  const [jobForm, setJobForm] = useState<JobFormData>({
     jobType: '',
     businessUnit: '',
     priority: 'Normal',
@@ -803,11 +983,11 @@ const NewJobPanel = ({ isOpen, onClose, customers, technicians, onJobCreated, db
     summary: '',
     sendConfirmation: true
   });
-  const panelRef = useRef(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (panelRef.current && !panelRef.current.contains(event.target)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
         onClose();
       }
     };
@@ -837,15 +1017,19 @@ const NewJobPanel = ({ isOpen, onClose, customers, technicians, onJobCreated, db
     setFilteredCustomers(filtered);
   }, [searchTerm, customers]);
 
-  const handleJobFormChange = (e) => {
-    const { name, value, type, checked } = e.target;
+  const handleJobFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    const checked = (e.target as HTMLInputElement).type === 'checkbox' 
+      ? (e.target as HTMLInputElement).checked 
+      : undefined;
+      
     setJobForm(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: checked !== undefined ? checked : value
     }));
   };
 
-  const handleCustomerSelect = (customer) => {
+  const handleCustomerSelect = (customer: Customer) => {
     setSelectedCustomer(customer);
     setSearchTerm(customer.name);
     setFilteredCustomers([]);
@@ -886,7 +1070,12 @@ const NewJobPanel = ({ isOpen, onClose, customers, technicians, onJobCreated, db
         userId: userId
       };
 
-      await addDoc(collection(db, 'jobs'), jobData);
+      if (!companyId) {
+        alert('Missing company context, please reload.');
+        return;
+      }
+
+      await addDoc(collection(db, 'companies', companyId, 'jobs'), jobData);
       
       // Reset form and close panel
       setJobForm({
@@ -1116,7 +1305,7 @@ const NewJobPanel = ({ isOpen, onClose, customers, technicians, onJobCreated, db
 };
 
 // --- SHIFT WARNING MODAL ---
-const ShiftWarningModal = ({ isOpen, onConfirm, onCancel, technicianName }) => {
+const ShiftWarningModal: React.FC<ShiftWarningModalProps> = ({ isOpen, onConfirm, onCancel, technicianName }) => {
   if (!isOpen) return null;
 
   return createPortal(
@@ -1153,9 +1342,9 @@ const ShiftWarningModal = ({ isOpen, onConfirm, onCancel, technicianName }) => {
 };
 
 // --- JOB CARD COMPONENT ---
-const JobCard = ({ job, onDragStart, isDragging, level, technicianColor, onClick }) => {
-  const jobCardRef = useRef(null);
-  const [popoverPosition, setPopoverPosition] = useState({ top: 0, left: 0, visible: false });
+const JobCard: React.FC<JobCardProps> = ({ job, onDragStart, isDragging, level, technicianColor, onClick }) => {
+  const jobCardRef = useRef<HTMLDivElement | null>(null);
+  const [popoverPosition, setPopoverPosition] = useState<PopoverPosition>({ top: 0, left: 0, visible: false });
 
   const getJobStyle = () => {
     const startMinutes = timeToMinutes(job.startTime);
@@ -1175,6 +1364,7 @@ const JobCard = ({ job, onDragStart, isDragging, level, technicianColor, onClick
       setPopoverPosition({ top: rect.top - 10, left: rect.left, visible: true }); 
     }
   };
+  
   const handleMouseLeave = () => setPopoverPosition(p => ({ ...p, visible: false }));
 
   return (
@@ -1210,40 +1400,56 @@ const JobCard = ({ job, onDragStart, isDragging, level, technicianColor, onClick
           onDragStart(e, job, 'resize-right'); 
         }}/>
       </div>
-      {popoverPosition.visible && createPortal(<div className="fixed w-72 p-4 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg shadow-2xl z-50 pointer-events-none transition-opacity duration-300" style={{ top: popoverPosition.top, left: popoverPosition.left, transform: 'translateY(-100%)' }}><h4 className="font-bold text-gray-800 dark:text-gray-100">{job.type}</h4><p className="text-sm text-gray-600 dark:text-gray-300">{job.title}</p><p className="text-sm text-gray-500 dark:text-gray-400 flex items-center mt-2"><MapPin size={14} className="mr-2 shrink-0"/>{job.address}</p><p className="text-sm text-gray-500 dark:text-gray-400 flex items-center mt-1"><Phone size={14} className="mr-2 shrink-0"/>{job.phone}</p><div className="border-t border-gray-200 dark:border-slate-700 mt-3 pt-3"><p className="text-xs text-gray-500 dark:text-gray-400 italic">{job.notes}</p></div></div>, document.body)}
+      {popoverPosition.visible && createPortal(
+        <div className="fixed w-72 p-4 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg shadow-2xl z-50 pointer-events-none transition-opacity duration-300" style={{ top: popoverPosition.top, left: popoverPosition.left, transform: 'translateY(-100%)' }}>
+          <h4 className="font-bold text-gray-800 dark:text-gray-100">{job.type}</h4>
+          <p className="text-sm text-gray-600 dark:text-gray-300">{job.title}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center mt-2">
+            <MapPin size={14} className="mr-2 shrink-0"/>{job.address}
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center mt-1">
+            <Phone size={14} className="mr-2 shrink-0"/>{job.phone}
+          </p>
+          <div className="border-t border-gray-200 dark:border-slate-700 mt-3 pt-3">
+            <p className="text-xs text-gray-500 dark:text-gray-400 italic">{job.notes}</p>
+          </div>
+        </div>, document.body)}
     </div>
   );
 };
 
 // --- MAIN DISPATCH COMPONENT ---
 const Dispatch = () => {
-  const [jobs, setJobs] = useState([]);
-  const [technicians, setTechnicians] = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [schedules, setSchedules] = useState([]);
+  // Multi-tenant info from Firebase custom claims
+  const { user, companyId } = useFirebaseAuth();
+
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [schedules, setSchedules] = useState<Shift[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showTechList, setShowTechList] = useState(false);
-  const [selectedTechs, setSelectedTechs] = useState([]);
-  const [dragState, setDragState] = useState(null);
+  const [selectedTechs, setSelectedTechs] = useState<string[]>([]);
+  const [dragState, setDragState] = useState<DragState | null>(null);
   const [showShiftWarning, setShowShiftWarning] = useState(false);
-  const [pendingJobAssignment, setPendingJobAssignment] = useState(null);
+  const [pendingJobAssignment, setPendingJobAssignment] = useState<PendingJobAssignment | null>(null);
   const [activeJobTab, setActiveJobTab] = useState('unassigned');
-  const [db, setDb] = useState(null);
-  const [userId, setUserId] = useState(null);
+  const [db, setDb] = useState<Firestore | null>(sharedDb);
+  const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [dataVersion, setDataVersion] = useState(0);
   
   // New state for added features
-  const [selectedJob, setSelectedJob] = useState(null);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [showJobDetails, setShowJobDetails] = useState(false);
   const [showNewJobPanel, setShowNewJobPanel] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
 
   // Refs for timeline and technician rows
-  const timelineContainerRef = useRef(null);
-  const technicianRowsRef = useRef(new Map());
+  const timelineContainerRef = useRef<HTMLDivElement | null>(null);
+  const technicianRowsRef = useRef<Map<string, HTMLDivElement | null>>(new Map());
 
   // Date navigation functions
   const goToPreviousDay = () => {
@@ -1260,52 +1466,15 @@ const Dispatch = () => {
 
   // Initialize Firebase
   useEffect(() => {
-    const initializeFirebase = async () => {
-      try {
-        if (typeof __firebase_config === 'undefined' || !__firebase_config) {
-          setError("Firebase configuration is missing");
-          setIsLoading(false);
-          return;
-        }
-        
-        let firebaseConfig;
-        if (typeof __firebase_config === 'string') {
-          firebaseConfig = JSON.parse(__firebase_config);
-        } else {
-          firebaseConfig = __firebase_config;
-        }
-
-        const app = initializeApp(firebaseConfig);
-        const firestore = getFirestore(app);
-        const auth = getAuth(app);
-        
-        setDb(firestore);
-        
-        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-          if (user) {
-            setUserId(user.uid);
-            setIsLoading(false);
-          } else {
-            try {
-              const userCredential = await signInAnonymously(auth);
-              setUserId(userCredential.user.uid);
-              setIsLoading(false);
-            } catch (authError) {
-              setError("Authentication failed");
-              setIsLoading(false);
-            }
-          }
-        });
-        
-        return () => unsubscribeAuth();
-      } catch (e) {
-        console.error("Error initializing Firebase:", e);
-        setError("Firebase initialization failed");
+    const unsub = onAuthStateChanged(sharedAuth, (user) => {
+      if (user) {
+        setUserId(user.uid);
         setIsLoading(false);
+      } else {
+        window.location.href = '/login';
       }
-    };
-
-    initializeFirebase();
+    });
+    return () => unsub();
   }, []);
 
   // Force refresh function
@@ -1325,12 +1494,12 @@ const Dispatch = () => {
 
   // Load active technicians from Firebase
   useEffect(() => {
-    if (!db || !userId) return;
+    if (!db || !userId || !companyId) return;
 
     console.log('🔄 Loading technicians... (version:', dataVersion, ')');
 
     const techQuery = query(
-      collection(db, 'staff'),
+      collection(db, 'companies', companyId!, 'staff'),
       where("userId", "==", userId),
       where("staffType", "==", "technician"),
       where("status", "==", "active")
@@ -1338,15 +1507,15 @@ const Dispatch = () => {
     
     const unsubscribe = onSnapshot(techQuery, (querySnapshot) => {
       console.log('👥 Technicians snapshot received, docs:', querySnapshot.size);
-      const techData = [];
+      const techData: Technician[] = [];
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        const techInfo = {
+        const techInfo: Technician = {
           id: doc.id,
           name: data.fullName || `${data.firstName} ${data.lastName}`,
           status: 'available',
           clockStatus: 'On-clock for 8h 0m',
-          role: data.role,
+          role: data.role || '',
           businessUnit: data.businessUnit,
           profilePicture: data.profilePicture,
           color: data.color || '#3B82F6'
@@ -1363,21 +1532,27 @@ const Dispatch = () => {
     });
     
     return () => unsubscribe();
-  }, [db, userId, dataVersion]);
+  }, [db, userId, companyId, dataVersion]);
 
   // Load customers from Firebase
   useEffect(() => {
-    if (!db || !userId) return;
+    if (!db || !userId || !companyId) return;
 
     const customersQuery = query(
-      collection(db, 'customers'),
+      collection(db, 'companies', companyId!, 'customers'),
       where("userId", "==", userId)
     );
     
     const unsubscribe = onSnapshot(customersQuery, (querySnapshot) => {
-      const customersData = [];
+      const customersData: Customer[] = [];
       querySnapshot.forEach((doc) => {
-        customersData.push({ id: doc.id, ...doc.data() });
+        customersData.push({ 
+          id: doc.id, 
+          name: doc.data().name || 'Unnamed Customer',
+          email: doc.data().email,
+          phone: doc.data().phone,
+          address: doc.data().address
+        });
       });
       setCustomers(customersData);
     }, (error) => {
@@ -1385,11 +1560,11 @@ const Dispatch = () => {
     });
     
     return () => unsubscribe();
-  }, [db, userId]);
+  }, [db, userId, companyId]);
 
   // Load shifts with the correct collection name and structure
   useEffect(() => {
-    if (!db || !userId) return;
+    if (!db || !userId || !companyId) return;
 
     console.log('🔄 Loading shifts for current date... (version:', dataVersion, ')');
     
@@ -1397,7 +1572,7 @@ const Dispatch = () => {
     console.log('Looking for shifts on date:', currentDateStr);
     
     const shiftsQuery = query(
-      collection(db, 'shifts'),
+      collection(db, 'companies', companyId!, 'shifts'),
       where("userId", "==", userId),
       where("startDate", "==", currentDateStr)
     );
@@ -1405,10 +1580,17 @@ const Dispatch = () => {
     const unsubscribe = onSnapshot(shiftsQuery, (snapshot) => {
       console.log(`📊 Found ${snapshot.size} shifts for ${currentDateStr}`);
       
-      const shiftsData = snapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data() 
-      }));
+      const shiftsData: Shift[] = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return { 
+          id: doc.id, 
+          staffId: data.staffId || '',
+          startDate: data.startDate || currentDateStr,
+          startTime: data.startTime || '09:00',
+          endTime: data.endTime || '17:00',
+          type: data.type || 'regular'
+        };
+      });
       
       console.log('✅ Shifts loaded:', shiftsData);
       setSchedules(shiftsData);
@@ -1418,10 +1600,10 @@ const Dispatch = () => {
     });
 
     return () => unsubscribe();
-  }, [db, userId, currentDate, dataVersion]);
+  }, [db, userId, currentDate, dataVersion, companyId]);
 
   // Get technician shift with the correct data structure
-  const getTechnicianShiftForToday = useCallback((technicianId) => {
+  const getTechnicianShiftForToday = useCallback((technicianId: string): Shift | undefined => {
     console.log(`🔍 Looking for shift for technician: ${technicianId}`);
     console.log('Available shifts:', schedules);
     
@@ -1435,7 +1617,7 @@ const Dispatch = () => {
   }, [schedules]);
 
   // Check if specific time slot is within shift  
-  const isTimeSlotInShift = useCallback((technicianId, slotHour) => {
+  const isTimeSlotInShift = useCallback((technicianId: string, slotHour: number): boolean => {
     const shift = getTechnicianShiftForToday(technicianId);
     
     if (!shift) {
@@ -1473,7 +1655,7 @@ const Dispatch = () => {
 
   // Load jobs from Firebase - FIXED: Multi-technician support
   useEffect(() => {
-    if (!db || !userId) return;
+    if (!db || !userId || !companyId) return;
 
     console.log('🔄 Loading jobs... (version:', dataVersion, ')');
     
@@ -1481,14 +1663,14 @@ const Dispatch = () => {
     console.log('Loading jobs for date:', currentDateStr);
 
     const jobsQuery = query(
-      collection(db, 'jobs'),
+      collection(db, 'companies', companyId!, 'jobs'),
       where("userId", "==", userId),
       where("startDate", "==", currentDateStr)
     );
     
     const unsubscribe = onSnapshot(jobsQuery, (querySnapshot) => {
       console.log('💼 Jobs snapshot received for', currentDateStr, ', docs:', querySnapshot.size);
-      const jobsData = [];
+      const jobsData: Job[] = [];
       querySnapshot.forEach((doc) => {
         const data = doc.data();
         
@@ -1496,10 +1678,10 @@ const Dispatch = () => {
           // Create a job entry for each assigned technician
           if (data.appointments && data.appointments.length > 0) {
             // Handle multi-technician jobs - create a job instance for each technician
-            data.appointments.forEach((appointment, index) => {
+            data.appointments.forEach((appointment: any, index: number) => {
               const tech = technicians.find(t => t.name === appointment.technician);
               if (tech) {
-                const job = {
+                const job: Job = {
                   id: `${doc.id}-${index}`, // Unique ID for each technician assignment
                   originalId: doc.id, // Keep original job ID for updates
                   title: data.customerName || 'Unknown Customer',
@@ -1525,7 +1707,7 @@ const Dispatch = () => {
             });
           } else {
             // Handle single technician jobs (legacy format)
-            const job = {
+            const job: Job = {
               id: doc.id,
               originalId: doc.id,
               title: data.customerName || 'Unknown Customer',
@@ -1564,10 +1746,10 @@ const Dispatch = () => {
     });
     
     return () => unsubscribe();
-  }, [db, userId, technicians, dataVersion, currentDate]);
+  }, [db, userId, technicians, dataVersion, currentDate, companyId]);
 
   // Check if technician has shift for current time
-  const technicianHasShift = (technicianId, startTime) => {
+  const technicianHasShift = (technicianId: string, startTime: string): boolean => {
     const shift = getTechnicianShiftForToday(technicianId);
     
     if (!shift || shift.type === 'time_off') {
@@ -1595,9 +1777,11 @@ const Dispatch = () => {
     return `${displayHour} ${hour < 12 ? 'AM' : 'PM'}`; 
   });
   
-  const toggleTechnician = (techId) => setSelectedTechs(p => p.includes(techId) ? p.filter(id => id !== techId) : [...p, techId]);
+  const toggleTechnician = (techId: string) => setSelectedTechs(p => 
+    p.includes(techId) ? p.filter(id => id !== techId) : [...p, techId]
+  );
   
-  const handleDragStart = (e, job, type) => {
+  const handleDragStart = (e: React.MouseEvent, job: Job, type: 'move' | 'resize-left' | 'resize-right') => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
@@ -1605,7 +1789,9 @@ const Dispatch = () => {
     document.body.classList.add('dragging');
     
     const jobElement = e.currentTarget.closest('.job-card');
-    const rect = jobElement.getBoundingClientRect();
+    const rect = jobElement?.getBoundingClientRect();
+    
+    if (!rect) return;
     
     let offsetX, offsetY;
     
@@ -1628,161 +1814,118 @@ const Dispatch = () => {
       initialMouseY: e.clientY,
       isDraggingFreely: type === 'move',
       mouseX: e.clientX,
-      mouseY: e.clientY
+      mouseY: e.clientY,
+      hoverHour: null,
+      hoverTechnicianId: null
     });
   };
 
-  const handleJobDragStart = (e, job) => {
+  const handleJobDragStart = (e: React.DragEvent<HTMLDivElement>, job: Job) => {
     e.dataTransfer.setData('application/json', JSON.stringify(job));
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleMouseMove = useCallback((e) => {
+  // Handle mouse move during drag or resize
+  const handleMouseMove = (e: React.MouseEvent<Element, MouseEvent> | MouseEvent) => {
     if (!dragState) return;
-    
-    // For free dragging, update position and calculate hover hour
-    if (dragState.isDraggingFreely) {
-      let hoverHour = null;
-      let hoverTechnicianId = null;
-      
-      // Calculate which hour we're hovering over
-      if (timelineContainerRef.current) {
-        const container = timelineContainerRef.current;
-        const rect = container.getBoundingClientRect();
-        const scrollLeft = container.scrollLeft;
-        
-        // Auto-scroll near edges
-        const scrollZone = 100;
-        const scrollSpeed = 20;
-        
-        if (e.clientX < rect.left + scrollZone) {
-          container.scrollLeft -= scrollSpeed;
-        } else if (e.clientX > rect.right - scrollZone) {
-          container.scrollLeft += scrollSpeed;
-        }
-        
-        // Calculate hover hour
-        const relativeX = e.clientX - rect.left + scrollLeft - dragState.offsetX;
-        const hourPosition = relativeX / PIXELS_PER_HOUR;
-        hoverHour = Math.max(0, Math.min(23, Math.floor(hourPosition)));
+
+    // Find technician row element under the mouse
+    let hoverTechnicianId: string | null = null;
+    const techRows = document.querySelectorAll('.technician-row');
+    for (const row of techRows) {
+      const rect = row.getBoundingClientRect();
+      if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        hoverTechnicianId = row.getAttribute('data-tech-id');
+        break;
       }
-      
-      // Calculate which technician row we're over
-      technicianRowsRef.current.forEach((rowEl, techId) => {
-        if (!rowEl) return;
-        const rowRect = rowEl.getBoundingClientRect();
-        if (e.clientY >= rowRect.top && e.clientY <= rowRect.bottom) {
-          hoverTechnicianId = techId;
-        }
-      });
-      
-      setDragState(prev => ({
+    }
+
+    // Calculate timeline position and hour
+    let hoverHour: number | null = null;
+    const timelineRect = timelineContainerRef.current?.getBoundingClientRect();
+    if (timelineRect) {
+      const timelineX = e.clientX - timelineRect.left;
+      hoverHour = Math.max(0, Math.min(23, Math.floor(timelineX / PIXELS_PER_HOUR)));
+    }
+
+    setDragState(prev => {
+      if (!prev) return null;
+      return {
         ...prev,
         mouseX: e.clientX,
         mouseY: e.clientY,
         hoverHour,
         hoverTechnicianId
-      }));
+      };
+    });
+
+    // Update job position for visual feedback
+    const job = jobs.find(j => j.id === dragState.jobId);
+    if (!job) return;
+
+    const draggedJobElement = document.querySelector(`[data-job-id="${dragState.jobId}"]`);
+    if (draggedJobElement && dragState.type === 'move' && hoverTechnicianId && hoverHour !== null) {
+      // Calculate new time position based on hourly grid
+      const newStartMinutes = hoverHour * 60;
+      if (newStartMinutes !== undefined) {
+        const newEndMinutes = newStartMinutes + dragState.initialJobDuration;
+        
+        setSelectedJob(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            startTime: minutesToTime(newStartMinutes),
+            endTime: minutesToTime(newEndMinutes)
+          } as Job;
+        });
+      }
+    }
+  };
+
+  const handleMouseUp = async (e: React.MouseEvent<Element, MouseEvent> | MouseEvent) => {
+    if (!dragState || !dragState.jobId) return;
+    
+    document.body.classList.remove('dragging');
+    
+    // Find the target job for potentially updating
+    const jobIndex = jobs.findIndex(job => job.id === dragState.jobId);
+    if (jobIndex === -1) {
+      setDragState(null);
       return;
     }
     
-    // For resize operations
-    if (!timelineContainerRef.current) return;
-    
-    const container = timelineContainerRef.current;
-    const rect = container.getBoundingClientRect();
-    const scrollZone = 60, scrollSpeed = 15;
-    if (e.clientX < rect.left + scrollZone) container.scrollLeft -= scrollSpeed;
-    else if (e.clientX > rect.right - scrollZone) container.scrollLeft += scrollSpeed;
-
-    // Calculate mouse position in timeline
-    const mouseXInTimeline = e.clientX - rect.left + container.scrollLeft;
-    const mouseMinutes = (mouseXInTimeline / PIXELS_PER_HOUR) * 60;
-    
-    setJobs(prevJobs => prevJobs.map(job => {
-      if (job.id !== dragState.jobId) return job;
-      let newStartMinutes, newEndMinutes;
-      
-      const currentStartMinutes = timeToMinutes(job.startTime);
-      const currentEndMinutes = timeToMinutes(job.endTime);
-      
-      if (dragState.type === 'resize-right') { 
-        newStartMinutes = currentStartMinutes; 
-        newEndMinutes = mouseMinutes; 
-      } else if (dragState.type === 'resize-left') { 
-        newEndMinutes = currentEndMinutes; 
-        newStartMinutes = mouseMinutes; 
-      }
-      
-      // Snap to 5-minute intervals for resizing
-      newStartMinutes = Math.max(0, Math.round(newStartMinutes / 5) * 5);
-      newEndMinutes = Math.min(24 * 60, Math.round(newEndMinutes / 5) * 5);
-      
-      // Minimum 15-minute duration
-      if (newEndMinutes - newStartMinutes < 15) { 
-        if (dragState.type === 'resize-right') newEndMinutes = newStartMinutes + 15; 
-        else newStartMinutes = newEndMinutes - 15; 
-      }
-      
-      return { 
-        ...job, 
-        startTime: minutesToTime(newStartMinutes), 
-        endTime: minutesToTime(newEndMinutes)
-      };
-    }));
-  }, [dragState]);
-
-  const handleMouseUp = useCallback(async (e) => { 
-    document.body.classList.remove('dragging'); 
-    
     if (dragState && db) {
       if (dragState.isDraggingFreely) {
-        let targetTechnicianId = null;
-        let targetTime = null;
-        
+        let targetTechnicianId: string | null = null;
+        let targetTime: number | null = null;
         // Check if mouse is over a technician row
         technicianRowsRef.current.forEach((rowEl, techId) => {
           if (!rowEl) return;
           const rowRect = rowEl.getBoundingClientRect();
           if (e.clientY >= rowRect.top && e.clientY <= rowRect.bottom) {
             targetTechnicianId = techId;
-            
             if (timelineContainerRef.current && dragState.hoverHour !== null) {
               targetTime = dragState.hoverHour * 60; // Convert hour to minutes
             }
           }
         });
-        
         if (targetTechnicianId && targetTime !== null) {
           const tech = technicians.find(t => t.id === targetTechnicianId);
-          
-          // Get the original job document to update
           const jobId = dragState.originalJob.originalId || dragState.originalJob.id;
-          
-          // Calculate new end time based on original duration
           const newStartTime = minutesToTime(targetTime);
           const newEndTime = minutesToTime(targetTime + dragState.initialJobDuration);
-          
-          // Create or update appointments array
-          let appointments = [];
-          
+          let appointments: JobAppointment[] = [];
           if (dragState.originalJob.isMultiTech) {
-            // Get all current appointments for this job
-            const allJobInstances = jobs.filter(j => 
-              (j.originalId === jobId) || (j.id === jobId)
-            );
-            
+            const allJobInstances = jobs.filter(j => (j.originalId === jobId) || (j.id === jobId));
             appointments = allJobInstances.map(instance => ({
-              id: `${dragState.originalJob.jobNumber}-${instance.appointmentIndex + 1}`,
-              technician: instance.technician,
+              id: `${dragState.originalJob.jobNumber}-${(instance.appointmentIndex ?? 0) + 1}`,
+              technician: instance.technician || '',
               status: 'Scheduled',
               startDate: instance.startDate,
               startTime: instance.startTime,
               endTime: instance.endTime
             }));
-            
-            // Update the appointment for the current technician
-            const currentAppointmentIndex = dragState.originalJob.appointmentIndex || 0;
+            const currentAppointmentIndex = dragState.originalJob.appointmentIndex ?? 0;
             if (appointments[currentAppointmentIndex]) {
               appointments[currentAppointmentIndex] = {
                 ...appointments[currentAppointmentIndex],
@@ -1792,7 +1935,6 @@ const Dispatch = () => {
               };
             }
           } else {
-            // Single appointment
             appointments = [{
               id: `${dragState.originalJob.jobNumber}-1`,
               technician: tech?.name || '',
@@ -1802,8 +1944,6 @@ const Dispatch = () => {
               endTime: newEndTime
             }];
           }
-          
-          // Update the job in state immediately for better UX
           setJobs(prevJobs => prevJobs.map(job => {
             if (job.id === dragState.jobId) {
               return {
@@ -1817,21 +1957,19 @@ const Dispatch = () => {
             }
             return job;
           }));
-          
-          // Check if technician has shift for the new time
           if (!technicianHasShift(targetTechnicianId, newStartTime)) {
             setPendingJobAssignment({
               job: { ...dragState.originalJob, appointments },
-              technicianName: tech?.name || 'Unknown'
+              technicianId: targetTechnicianId,
+              technicianName: tech?.name || 'Unknown',
+              startTime: newStartTime
             });
             setShowShiftWarning(true);
             setDragState(null);
             return;
           }
-          
-          // Save to Firebase
           try {
-            await updateDoc(doc(db, 'jobs', jobId), {
+            await updateDoc(doc(db, 'companies', companyId!, 'jobs', jobId), {
               technician: appointments[0]?.technician || '',
               startTime: appointments[0]?.startTime || '',
               endTime: appointments[0]?.endTime || '',
@@ -1841,45 +1979,31 @@ const Dispatch = () => {
             });
           } catch (error) {
             console.error('Error updating job:', error);
-            // Revert state change on error
-            setJobs(prevJobs => prevJobs.map(job => 
-              job.id === dragState.jobId ? dragState.originalJob : job
-            ));
+            setJobs(prevJobs => prevJobs.map(job => job.id === dragState.jobId ? dragState.originalJob : job));
           }
         } else {
-          // Dropped outside valid area, restore original position
-          setJobs(prevJobs => prevJobs.map(job => 
-            job.id === dragState.jobId ? dragState.originalJob : job
-          ));
+          setJobs(prevJobs => prevJobs.map(job => job.id === dragState.jobId ? dragState.originalJob : job));
         }
       } else {
-        // Handle resize operations - update the specific appointment
         const updatedJob = jobs.find(job => job.id === dragState.jobId);
         if (updatedJob) {
           try {
             const jobId = updatedJob.originalId || updatedJob.id;
-            
-            // Get all appointments for this job
-            const allJobInstances = jobs.filter(j => 
-              (j.originalId === jobId) || (j.id === jobId)
-            );
-            
-            const appointments = allJobInstances.map(instance => {
+            const allJobInstances = jobs.filter(j => (j.originalId === jobId) || (j.id === jobId));
+            const appointments: JobAppointment[] = allJobInstances.map(instance => {
               if (instance.id === dragState.jobId) {
-                // Update the resized appointment
                 return {
-                  id: `${instance.jobNumber}-${instance.appointmentIndex + 1}`,
-                  technician: instance.technician,
+                  id: `${instance.jobNumber}-${(instance.appointmentIndex ?? 0) + 1}`,
+                  technician: instance.technician || '',
                   status: 'Scheduled',
                   startDate: instance.startDate,
                   startTime: updatedJob.startTime,
                   endTime: updatedJob.endTime
                 };
               } else {
-                // Keep other appointments unchanged
                 return {
-                  id: `${instance.jobNumber}-${instance.appointmentIndex + 1}`,
-                  technician: instance.technician,
+                  id: `${instance.jobNumber}-${(instance.appointmentIndex ?? 0) + 1}`,
+                  technician: instance.technician || '',
                   status: 'Scheduled',
                   startDate: instance.startDate,
                   startTime: instance.startTime,
@@ -1887,8 +2011,7 @@ const Dispatch = () => {
                 };
               }
             });
-            
-            await updateDoc(doc(db, 'jobs', jobId), {
+            await updateDoc(doc(db, 'companies', companyId!, 'jobs', jobId), {
               appointments,
               updatedAt: new Date().toISOString()
             });
@@ -1898,26 +2021,25 @@ const Dispatch = () => {
         }
       }
     }
-    
-    setDragState(null); 
-  }, [dragState, jobs, technicians, db, technicianHasShift]);
+    setDragState(null);
+  };
 
   const handleShiftWarningConfirm = async () => {
     if (pendingJobAssignment && db) {
       try {
         const jobId = pendingJobAssignment.job.originalId || pendingJobAssignment.job.id;
-        await updateDoc(doc(db, 'jobs', jobId), {
-          technician: pendingJobAssignment.job.appointments[0]?.technician || '',
-          startTime: pendingJobAssignment.job.appointments[0]?.startTime || '',
-          endTime: pendingJobAssignment.job.appointments[0]?.endTime || '',
-          appointments: pendingJobAssignment.job.appointments,
+        const appointments = pendingJobAssignment.job.appointments || [];
+        await updateDoc(doc(db, 'companies', companyId!, 'jobs', jobId), {
+          technician: appointments[0]?.technician || '',
+          startTime: appointments[0]?.startTime || '',
+          endTime: appointments[0]?.endTime || '',
+          appointments,
           updatedAt: new Date().toISOString()
         });
       } catch (error) {
         console.error('Error updating job:', error);
       }
     }
-    
     setShowShiftWarning(false);
     setPendingJobAssignment(null);
   };
@@ -1936,26 +2058,21 @@ const Dispatch = () => {
     setPendingJobAssignment(null);
   };
 
-  const handleDrop = async (e, technicianId) => {
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>, technicianId: string) => {
     e.preventDefault();
-    
+    if (!db) return;
     try {
       const jobData = JSON.parse(e.dataTransfer.getData('application/json'));
       const technician = technicians.find(t => t.id === technicianId);
-      
       if (!technician) return;
-
       let targetTime = 9 * 60; // Default to 9 AM
-      
       if (timelineContainerRef.current) {
         const timelineRect = timelineContainerRef.current.getBoundingClientRect();
         const scrollLeft = timelineContainerRef.current.scrollLeft;
-        
         const relativeX = e.clientX - timelineRect.left + scrollLeft;
         const timePosition = (relativeX / PIXELS_PER_HOUR) * 60;
         targetTime = Math.max(0, Math.round(timePosition / 15) * 15);
       }
-
       const updatedJob = {
         ...jobData,
         technicianId,
@@ -1964,17 +2081,17 @@ const Dispatch = () => {
         endTime: minutesToTime(targetTime + 60),
         status: 'scheduled'
       };
-      
       if (!technicianHasShift(technicianId, updatedJob.startTime)) {
         setPendingJobAssignment({
           job: updatedJob,
-          technicianName: technician.name
+          technicianId,
+          technicianName: technician.name,
+          startTime: updatedJob.startTime
         });
         setShowShiftWarning(true);
         return;
       }
-      
-      await updateDoc(doc(db, 'jobs', jobData.id), {
+      await updateDoc(doc(db, 'companies', companyId!, 'jobs', jobData.id), {
         technician: technician.name,
         startTime: updatedJob.startTime,
         endTime: updatedJob.endTime,
@@ -1989,18 +2106,17 @@ const Dispatch = () => {
         }],
         updatedAt: new Date().toISOString()
       });
-      
     } catch (error) {
       console.error('Error assigning job:', error);
     }
   };
 
-  const handleDragOver = (e) => {
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
   };
 
-  const handleJobClick = (job) => {
+  const handleJobClick = (job: Job) => {
     // Load the complete job data including all appointments
     if (job.isMultiTech && job.originalId) {
       // Get all instances of this multi-tech job
@@ -2008,8 +2124,8 @@ const Dispatch = () => {
       const fullJob = {
         ...job,
         appointments: allInstances.map(instance => ({
-          id: `${instance.jobNumber}-${instance.appointmentIndex + 1}`,
-          technician: instance.technician,
+          id: `${instance.jobNumber}-${(instance.appointmentIndex ?? 0) + 1}`,
+          technician: instance.technician || '',
           status: 'Scheduled',
           startDate: instance.startDate,
           startTime: instance.startTime,
@@ -2023,14 +2139,14 @@ const Dispatch = () => {
     setShowJobDetails(true);
   };
 
-  const handleSaveJob = async (updatedJob) => {
+  const handleSaveJob = async (updatedJob: Job) => {
     if (db) {
       try {
         const { id, originalId, appointmentIndex, isMultiTech, ...jobData } = updatedJob;
         const jobId = originalId || id; // Use originalId for multi-tech jobs
         
         // Update the job document with the new appointments array
-        await updateDoc(doc(db, 'jobs', jobId), {
+        await updateDoc(doc(db, 'companies', companyId!, 'jobs', jobId), {
           ...jobData,
           updatedAt: new Date().toISOString()
         });
@@ -2066,7 +2182,7 @@ const Dispatch = () => {
     }
   }, []);
 
-  if (isLoading) {
+  if (isLoading || !companyId) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-slate-900">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -2500,6 +2616,7 @@ const Dispatch = () => {
         onJobCreated={handleJobCreated}
         db={db}
         userId={userId}
+        companyId={companyId}
       />
 
       {/* Shift Warning Modal */}

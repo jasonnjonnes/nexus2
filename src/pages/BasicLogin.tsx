@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { useBasicAuth } from '../contexts/BasicAuthContext';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 
 export function BasicLogin() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const { login, error, loading } = useBasicAuth();
+  const { login, error, loading } = useFirebaseAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -16,7 +16,7 @@ export function BasicLogin() {
     e.preventDefault();
     
     try {
-      await login(username, password);
+      await login(email, password);
       navigate(from, { replace: true });
     } catch (err) {
       // Error is already handled by the auth context
@@ -41,18 +41,18 @@ export function BasicLogin() {
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
-              <label htmlFor="username" className="sr-only">
-                Username
+              <label htmlFor="email" className="sr-only">
+                Email
               </label>
               <input
-                id="username"
-                name="username"
-                type="text"
+                id="email"
+                name="email"
+                type="email"
                 required
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
               />
             </div>
             <div>

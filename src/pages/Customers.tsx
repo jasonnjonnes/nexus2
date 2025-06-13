@@ -4,12 +4,9 @@ import {
   MessageSquare, Star, MoreHorizontal, Clock, CheckCircle, FileCheck, X, 
   Tag, Trash2, Edit, Briefcase, Home, ChevronDown, ArrowLeft
 } from 'lucide-react';
-import { initializeApp } from "firebase/app";
-import { 
-  getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, 
-  query, where, getDocs, setDoc 
-} from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { auth as sharedAuth, db as sharedDb } from '../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { collection, query, where, onSnapshot, addDoc, setDoc, doc, updateDoc, deleteDoc, getFirestore } from 'firebase/firestore';
 import CustomerDetailView from '../components/CustomerDetailView';
 import LocationDetailView from '../components/LocationDetailView';
 import TagInput from '../components/TagInput';
@@ -140,7 +137,7 @@ const Customers = () => {
   const [customers, setCustomers] = useState([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [selectedLocationId, setSelectedLocationId] = useState(null);
-  const [db, setDb] = useState(null);
+  const [db, setDb] = useState(sharedDb);
   const [userId, setUserId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -153,76 +150,17 @@ const Customers = () => {
   const customersPerPage = 25;
   const [unsubscribeCustomers, setUnsubscribeCustomers] = useState(null);
 
-  // Initialize Firebase
+  // Listen for auth changes
   useEffect(() => {
-    const initializeFirebase = async () => {
-      try {
-        console.log('🔥 Starting Firebase initialization...');
-        
-        // Check if Firebase config is available
-        if (typeof __firebase_config === 'undefined' || !__firebase_config) {
-          console.error('❌ Firebase config is missing');
-          setError("Firebase configuration is missing. The app cannot connect to the database.");
-          setIsLoading(false);
-          return;
-        }
-        
-        // Parse Firebase config if it's a string
-        let firebaseConfig;
-        if (typeof __firebase_config === 'string') {
-          try {
-            firebaseConfig = JSON.parse(__firebase_config);
-          } catch (parseError) {
-            console.error('❌ Error parsing Firebase config:', parseError);
-            setError("Firebase configuration is invalid JSON.");
-            setIsLoading(false);
-            return;
-          }
-        } else {
-          firebaseConfig = __firebase_config;
-        }
-
-        console.log('✅ Firebase config loaded');
-
-        // Initialize Firebase app
-        const app = initializeApp(firebaseConfig);
-        const firestore = getFirestore(app);
-        const auth = getAuth(app);
-        
-        console.log('✅ Firebase app initialized');
-        setDb(firestore);
-        
-        // Set up authentication
-        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-          console.log('🔐 Auth state changed:', user ? `User logged in: ${user.uid}` : 'No user');
-          if (user) {
-            console.log('✅ User authenticated:', user.uid);
-            setUserId(user.uid);
-            setIsLoading(false);
-          } else {
-            try {
-              console.log('🔐 Signing in anonymously...');
-              const userCredential = await signInAnonymously(auth);
-              console.log('✅ Anonymous sign-in successful:', userCredential.user.uid);
-              setUserId(userCredential.user.uid);
-              setIsLoading(false);
-            } catch (authError) {
-              console.error("❌ Firebase auth error:", authError);
-              setError("Could not authenticate with Firebase. Please ensure Anonymous Sign-In is enabled in your Firebase project settings.");
-              setIsLoading(false);
-            }
-          }
-        });
-        
-        return () => unsubscribeAuth();
-      } catch (e) {
-        console.error("❌ Error initializing Firebase:", e);
-        setError("Firebase initialization failed. Please check the configuration.");
+    const unsub = onAuthStateChanged(sharedAuth, (user) => {
+      if (user) {
+        setUserId(user.uid);
         setIsLoading(false);
+      } else {
+        window.location.href = '/login';
       }
-    };
-
-    initializeFirebase();
+    });
+    return () => unsub();
   }, []);
 
   // Set up Firestore listener for customers

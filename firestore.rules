@@ -1,0 +1,18 @@
+service cloud.firestore {
+  match /databases/{db}/documents {
+    match /{doc=**} {
+
+      // Read  ───────────────────────────────
+      allow read: if request.auth != null
+                   && request.auth.uid == resource.data.userId;
+
+      // Create (new doc)  ───────────────────
+      allow create: if request.auth != null
+                     && request.auth.uid == request.resource.data.userId;
+
+      // Update / Delete  ────────────────────
+      allow update, delete: if request.auth != null
+                             && request.auth.uid == resource.data.userId;
+    }
+  }
+}
