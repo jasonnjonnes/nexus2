@@ -3,6 +3,7 @@ import { FirebaseAuthProvider } from './contexts/FirebaseAuthContext';
 import { BasicProtectedRoute } from './components/BasicProtectedRoute';
 import { BasicLogin } from './pages/BasicLogin';
 import { BasicRegister } from './pages/BasicRegister';
+import InviteSignup from './pages/InviteSignup';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Inbound from './pages/Inbound';
@@ -27,6 +28,7 @@ export default function App() {
           {/* Public routes */}
           <Route path="/login" element={<BasicLogin />} />
           <Route path="/register" element={<BasicRegister />} />
+          <Route path="/invite/:token" element={<InviteSignup />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
 
           {/* Protected routes */}

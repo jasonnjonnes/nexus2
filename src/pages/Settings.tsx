@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, Search, Plus, X, User, Mail, Phone, MapPin, Calendar, Shield, Building, Camera, Edit, Palette, Upload, Image } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, Plus, X, User, Mail, Phone, MapPin, Calendar, Shield, Building, Camera, Edit, Palette, Upload, Image, UserPlus } from 'lucide-react';
 import { initializeApp, FirebaseOptions } from "firebase/app";
 import { 
   getFirestore, Firestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, 
@@ -7,6 +7,7 @@ import {
 } from "firebase/firestore";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import GLAccounts from '../components/GLAccounts';
+import StaffInvitationModal from '../components/StaffInvitationModal';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import { db } from '../firebase';
 
@@ -715,6 +716,7 @@ interface StaffListProps {
   onDelete: (staffId: string) => void;
   onShowForm: () => void;
   onSetEditingStaff: (staff: StaffMember | null) => void;
+  onInvite: () => void;
 }
 
 const StaffList: React.FC<StaffListProps> = ({
@@ -724,7 +726,8 @@ const StaffList: React.FC<StaffListProps> = ({
   onEdit,
   onDelete,
   onShowForm,
-  onSetEditingStaff
+  onSetEditingStaff,
+  onInvite
 }) => {
   type RoleColor = {
     [key: string]: string;
@@ -751,13 +754,22 @@ const StaffList: React.FC<StaffListProps> = ({
           <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100 capitalize">
             {staffType} ({staff.length})
           </h3>
-          <button
-            onClick={onShowForm}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-          >
-            <Plus size={16} className="mr-2" />
-            Add {staffType === 'office' ? 'Office Staff' : 'Technician'}
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={onInvite}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center"
+            >
+              <UserPlus size={16} className="mr-2" />
+              Invite {staffType === 'office' ? 'Office Staff' : 'Technician'}
+            </button>
+            <button
+              onClick={onShowForm}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+            >
+              <Plus size={16} className="mr-2" />
+              Add {staffType === 'office' ? 'Office Staff' : 'Technician'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1929,6 +1941,8 @@ const Settings: React.FC = () => {
   const [showTechnicianForm, setShowTechnicianForm] = useState(false);
   const [editingOfficeStaff, setEditingOfficeStaff] = useState<StaffMember | null>(null);
   const [editingTechnician, setEditingTechnician] = useState<StaffMember | null>(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteStaffType, setInviteStaffType] = useState<'office' | 'technician'>('office');
   
   // Remove old Firebase state - use context instead
   const [isLoading, setIsLoading] = useState(true);
@@ -2047,6 +2061,16 @@ const Settings: React.FC = () => {
     setShowTechnicianForm(true);
   };
 
+  const handleInviteOfficeStaff = () => {
+    setInviteStaffType('office');
+    setShowInviteModal(true);
+  };
+
+  const handleInviteTechnician = () => {
+    setInviteStaffType('technician');
+    setShowInviteModal(true);
+  };
+
   const filteredSections = settingsSections.map(section => ({
       ...section,
       items: section.items.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -2140,6 +2164,7 @@ const Settings: React.FC = () => {
               onDelete={handleDeleteStaff}
               onShowForm={() => setShowOfficeStaffForm(true)}
               onSetEditingStaff={setEditingOfficeStaff}
+              onInvite={handleInviteOfficeStaff}
             />
             {showOfficeStaffForm && (
               <StaffForm
@@ -2165,6 +2190,7 @@ const Settings: React.FC = () => {
               onDelete={handleDeleteStaff}
               onShowForm={() => setShowTechnicianForm(true)}
               onSetEditingStaff={setEditingTechnician}
+              onInvite={handleInviteTechnician}
             />
             {showTechnicianForm && (
               <StaffForm
@@ -2183,6 +2209,13 @@ const Settings: React.FC = () => {
           <GLAccounts />
         )}
       </div>
+
+      {/* Staff Invitation Modal */}
+      <StaffInvitationModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        staffType={inviteStaffType}
+      />
     </div>
   );
 };
