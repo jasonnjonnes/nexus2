@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, X, MapPin, Calendar, Plus, Phone, User, Building, Mail } from 'lucide-react';
+import { Search, X, MapPin, Calendar, Plus, Phone, User, Building, Mail, MessageSquare } from 'lucide-react';
 import { db } from '../firebase';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import {

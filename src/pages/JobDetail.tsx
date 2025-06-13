@@ -35,14 +35,14 @@ const JobDetail = () => {
   const { user, tenantId } = useFirebaseAuth();
   const userId = user?.uid || null;
   
-  const [job, setJob] = useState(null);
-  const [customer, setCustomer] = useState(null);
-  const [businessUnit, setBusinessUnit] = useState(null);
-  const [serviceLocation, setServiceLocation] = useState(null);
+  const [job, setJob] = useState<any>(null);
+  const [customer, setCustomer] = useState<any>(null);
+  const [businessUnit, setBusinessUnit] = useState<any>(null);
+  const [serviceLocation, setServiceLocation] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [invoices, setInvoices] = useState([]);
-  const [estimates, setEstimates] = useState([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [estimates, setEstimates] = useState<any[]>([]);
   const [isCreatingInvoice, setIsCreatingInvoice] = useState(false);
   const [isCreatingEstimate, setIsCreatingEstimate] = useState(false);
 

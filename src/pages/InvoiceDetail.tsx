@@ -455,7 +455,7 @@ const InvoiceTemplate = ({ invoice, businessUnit, companyProfile, customer }: { 
               {/* Show placeholder if no items */}
               {(invoice.services || []).length === 0 && (invoice.materials || []).length === 0 && (
                 <tr>
-                  <td colSpan="4" className="py-8 text-center text-gray-500 italic">
+                  <td colSpan={4} className="py-8 text-center text-gray-500 italic">
                     No line items added yet
                   </td>
                 </tr>

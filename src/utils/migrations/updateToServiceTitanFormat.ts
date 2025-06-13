@@ -107,7 +107,7 @@ export async function migrateToServiceTitanFormat(): Promise<MigrationResult> {
 
   } catch (error) {
     result.success = false;
-    result.errors.push(`Migration failed: ${error.message}`);
+    result.errors.push(`Migration failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   return result;

@@ -353,7 +353,7 @@ const EstimateTemplate = ({ estimate, businessUnit, companyProfile }: { estimate
             {/* Show placeholder rows if no items */}
             {(estimate.services || []).length === 0 && (estimate.materials || []).length === 0 && (
               <tr>
-                <td colSpan="5" className="py-8 text-center text-gray-500">
+                <td colSpan={5} className="py-8 text-center text-gray-500">
                   No items added yet. Switch to Edit mode to add services and materials.
                 </td>
               </tr>

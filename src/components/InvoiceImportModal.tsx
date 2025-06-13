@@ -209,7 +209,11 @@ const InvoiceImportModal: React.FC<InvoiceImportModalProps> = ({ isOpen, onClose
               invoice.jobId = jobId;
               invoice.customerId = customerId;
               invoice.locationId = locationId;
+              invoice.userId = userId;
               invoice.updatedAt = new Date().toISOString();
+              if (!invoice.createdAt) {
+                invoice.createdAt = new Date().toISOString();
+              }
 
               // Handle technician assignments
               const techNamesRaw = row['Assigned Technicians'] || '';

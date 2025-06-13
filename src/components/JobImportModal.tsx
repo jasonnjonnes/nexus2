@@ -190,7 +190,12 @@ const JobImportModal: React.FC<JobImportModalProps> = ({ isOpen, onClose, onComp
               job.id = jobId;
               job.customerId = customerId;
               job.locationId = locationId;
+              job.userId = userId;
               job.updatedAt = new Date().toISOString();
+              // Ensure createdAt exists for Dashboard queries
+              if (!job.createdAt) {
+                job.createdAt = new Date().toISOString();
+              }
               // Handle technician assignments
               let assignedTechs: Array<{id: string, name: string, assignedAt: string}> = [];
               const techNamesRaw = row['Assigned Technicians'] || row['technician'] || '';

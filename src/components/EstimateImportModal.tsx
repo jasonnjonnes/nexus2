@@ -142,7 +142,11 @@ const EstimateImportModal: React.FC<EstimateImportModalProps> = ({ isOpen, onClo
               estimate.jobId = jobId;
               estimate.customerId = customerId;
               estimate.locationId = locationId;
+              estimate.userId = userId;
               estimate.updatedAt = new Date().toISOString();
+              if (!estimate.createdAt) {
+                estimate.createdAt = new Date().toISOString();
+              }
 
               // Handle technician assignments for Sold By and Created By
               const techFields = ['Sold By', 'Estimate Created By'];

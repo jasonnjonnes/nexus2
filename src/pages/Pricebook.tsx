@@ -676,7 +676,7 @@ const Pricebook: React.FC = () => {
       console.log('Categories to import:', categoryItems.slice(0, 3));
       categoryItems.forEach(item => {
         try {
-                      const docId = item['Category ID'] || doc(collection(db, 'tenants', tenantId, 'categories')).id;
+                      const docId = item['Category ID'] || (tenantId ? doc(collection(db, 'tenants', tenantId, 'categories')).id : '');
           const docData: any = { userId };
           Object.keys(item).forEach(key => {
             if (key !== '_sheet' && key !== '_row') {
@@ -774,7 +774,9 @@ const Pricebook: React.FC = () => {
     }
 
     try {
-      await restorePricebookData(db, userId, tenantId);
+      if (tenantId) {
+        await restorePricebookData(db, userId, tenantId);
+      }
       alert('Pricebook data restored successfully!');
     } catch (error) {
       console.error('Error restoring pricebook data:', error);
@@ -2800,9 +2802,9 @@ const Pricebook: React.FC = () => {
                 const serviceInMemory = services.find(s => s.id === String(row.serviceId));
                 console.log('Service found in memory:', serviceInMemory ? { id: serviceInMemory.id, code: serviceInMemory.code, name: serviceInMemory.name } : 'Not found');
                 
-                // Check if material exists in memory
-                const materialInMemory = materials.find(m => m.id === String(row.materialId));
-                console.log('Material found in memory:', materialInMemory ? { id: materialInMemory.id, code: materialInMemory.code, name: materialInMemory.name } : 'Not found');
+                // Check if material exists in memory (materials will be defined after fetching service data)
+                // const materialInMemory = materials.find(m => m.id === String(row.materialId));
+                // console.log('Material found in memory:', materialInMemory ? { id: materialInMemory.id, code: materialInMemory.code, name: materialInMemory.name } : 'Not found');
                 
                 const serviceDocPath = `tenants/${tenantId}/services/${String(row.serviceId)}`;
                 console.log('Service document path:', serviceDocPath);
@@ -2874,7 +2876,7 @@ const Pricebook: React.FC = () => {
                 const error = `❌ ERROR processing row ${i + 1}: ${e}`;
                 console.error('Error linking material to service:', e);
                 console.error('Row that caused error:', row);
-                console.error('Error stack:', e.stack);
+                console.error('Error stack:', e instanceof Error ? e.stack : String(e));
                 errors.push(`Error processing row ${JSON.stringify(row)}: ${e}`);
                 fail++; 
               }
@@ -3048,7 +3050,7 @@ const Pricebook: React.FC = () => {
           onClose={() => setShowCustomerImport(false)}
           onComplete={() => {/* Optionally refresh customers here */}}
           userId={userId}
-          tenantId={tenantId}
+          tenantId={tenantId || undefined}
         />
       )}
 

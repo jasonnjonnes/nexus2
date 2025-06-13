@@ -196,8 +196,7 @@ const Dashboard: React.FC = () => {
     // Load jobs
     const jobsQuery = query(
       collection(db, 'tenants', tenantId, 'jobs'),
-      where("userId", "==", userId),
-      orderBy("createdAt", "desc")
+      where("userId", "==", userId)
     );
     unsubscribes.push(onSnapshot(jobsQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
       const jobsData: Job[] = [];
@@ -278,6 +277,13 @@ const Dashboard: React.FC = () => {
       unsubscribes.forEach(unsubscribe => unsubscribe());
     };
   }, [db, userId, tenantId]);
+
+  // Set loading to false once we have initial data
+  useEffect(() => {
+    if (jobs.length > 0 || invoices.length > 0 || estimates.length > 0 || customers.length > 0) {
+      setIsLoading(false);
+    }
+  }, [jobs, invoices, estimates, customers]);
 
   // Get date range for filtering
   const getDateRange = (): DateRange => {

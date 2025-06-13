@@ -253,7 +253,13 @@ const LogoUpload = ({
       // Moved if (file) block inside try so that the function is closed properly
       if (file) {
          const reader = new FileReader();
-         reader.onload = (e) => { const dataUrl = e.target.result; setLogoPreview(dataUrl); onLogoChange(dataUrl); };
+         reader.onload = (e) => { 
+           const dataUrl = e.target?.result;
+           if (dataUrl && typeof dataUrl === 'string') {
+             setLogoPreview(dataUrl); 
+             onLogoChange(dataUrl); 
+           }
+         };
          reader.readAsDataURL(file);
       }
     } catch (err) { console.error("Error processing file:", err); setError("An error occurred while processing the file."); }
@@ -416,9 +422,11 @@ const StaffForm: React.FC<StaffFormProps> = ({ onCancel, onSave, staffType, edit
     if (file) {
       const reader = new FileReader();
       reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        setProfilePicturePreview(dataUrl);
-        setFormData(prev => ({ ...prev, profilePicture: dataUrl }));
+        const dataUrl = e.target?.result;
+        if (dataUrl && typeof dataUrl === 'string') {
+          setProfilePicturePreview(dataUrl);
+          setFormData(prev => ({ ...prev, profilePicture: dataUrl }));
+        }
       };
       reader.readAsDataURL(file);
     }
