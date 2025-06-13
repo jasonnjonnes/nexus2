@@ -22,11 +22,11 @@ import {
   getFirestore, collection, onSnapshot, query, where, doc, setDoc, deleteDoc, addDoc, getDocs, Firestore
 } from "firebase/firestore";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
-import CalendarPicker from '@/components/schedule/CalendarPicker';
-import BulkDeleteModal from '@/components/schedule/BulkDeleteModal';
-import CreateShiftModal from '@/components/schedule/CreateShiftModal';
-import UnscheduledWarningModal from '@/components/schedule/UnscheduledWarningModal';
-import { StaffMember, Shift, ShiftCreationData, ShiftDeletionData } from '@/types/schedule';
+import CalendarPicker from '../components/schedule/CalendarPicker';
+import BulkDeleteModal from '../components/schedule/BulkDeleteModal';
+import CreateShiftModal from '../components/schedule/CreateShiftModal';
+import UnscheduledWarningModal from '../components/schedule/UnscheduledWarningModal';
+import { StaffMember, Shift, ShiftCreationData, ShiftDeletionData } from '../types/schedule';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import { db } from '../firebase';
 
@@ -52,13 +52,33 @@ const Schedule: React.FC = () => {
   const userId = user?.uid;
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Debug logging
+  console.log('Schedule render:', { user: user?.email, tenantId, userId, isLoading });
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [selectedBusinessUnit, setSelectedBusinessUnit] = useState('');
   const [selectedStaffFilter, setSelectedStaffFilter] = useState('');
 
+  // Add timeout to prevent infinite loading
   useEffect(() => {
-    if (!db || !userId || !tenantId) return;
+    const timeout = setTimeout(() => {
+      if (isLoading) {
+        console.log('Schedule: Loading timeout reached, setting loading to false');
+        setIsLoading(false);
+      }
+    }, 5000); // 5 second timeout
+
+    return () => clearTimeout(timeout);
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (!db || !userId || !tenantId) {
+      console.log('Schedule: Missing required data for Firebase queries', { db: !!db, userId, tenantId });
+      return;
+    }
+
+    console.log('Schedule: Setting up staff listener', { userId, tenantId });
 
     const staffQuery = query(
       collection(db, 'tenants', tenantId, 'staff'),
@@ -68,9 +88,13 @@ const Schedule: React.FC = () => {
     
     const unsubscribe = onSnapshot(staffQuery, (querySnapshot) => {
       const staffData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as StaffMember[];
+      console.log('Schedule: Loaded staff data:', staffData.length, 'members');
       setStaff(staffData);
+      setIsLoading(false); // Set loading to false when staff data loads
     }, (error) => {
       console.error("Error loading staff:", error);
+      setError('Failed to load staff data');
+      setIsLoading(false);
     });
     
     return () => unsubscribe();
@@ -79,6 +103,8 @@ const Schedule: React.FC = () => {
   useEffect(() => {
     if (!db || !userId || !tenantId) return;
 
+    console.log('Schedule: Setting up shifts listener', { userId, tenantId });
+
     const shiftsQuery = query(
       collection(db, 'tenants', tenantId, 'schedule'),
       where("userId", "==", userId)
@@ -86,9 +112,11 @@ const Schedule: React.FC = () => {
     
     const unsubscribe = onSnapshot(shiftsQuery, (querySnapshot) => {
       const shiftsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Shift[];
+      console.log('Schedule: Loaded shifts data:', shiftsData.length, 'shifts');
       setShifts(shiftsData);
     }, (error) => {
       console.error("Error loading shifts:", error);
+      setError('Failed to load shifts data');
     });
     
     return () => unsubscribe();
