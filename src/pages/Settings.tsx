@@ -944,6 +944,7 @@ interface BusinessUnitFormData extends Omit<BusinessUnit, 'id' | 'userId'> {
 const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, userId, tenantId }) => {
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
   const [editingUnit, setEditingUnit] = useState<BusinessUnit | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [formData, setFormData] = useState<BusinessUnitFormData>({
@@ -1034,6 +1035,7 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
 
   const handleEdit = (unit: BusinessUnit): void => {
     setEditingUnit(unit);
+    setShowForm(true);
     setFormData({
       name: unit.name,
       officialName: unit.officialName,
@@ -1049,6 +1051,27 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
       invoiceMessage: unit.invoiceMessage,
       logo: unit.logo,
       isActive: unit.isActive
+    });
+  };
+
+  const handleAdd = (): void => {
+    setEditingUnit(null);
+    setShowForm(true);
+    setFormData({
+      name: '',
+      officialName: '',
+      email: '',
+      bccEmail: '',
+      phoneNumber: '',
+      trade: '',
+      division: '',
+      tags: [],
+      defaultWarehouse: '',
+      currency: 'USD',
+      invoiceHeader: '',
+      invoiceMessage: '',
+      logo: '',
+      isActive: true
     });
   };
 
@@ -1074,6 +1097,7 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
       }
 
       setEditingUnit(null);
+      setShowForm(false);
       setFormData({
         name: '',
         officialName: '',
@@ -1120,7 +1144,7 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
             Bulk Update
           </button>
           <button
-            onClick={() => setEditingUnit(null)}
+            onClick={handleAdd}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
           >
             <Plus size={16} className="mr-2" />
@@ -1141,7 +1165,7 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
               Create business units to organize your operations by location or service type.
             </p>
             <button
-              onClick={() => setEditingUnit(null)}
+              onClick={handleAdd}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               Add First Business Unit
@@ -1247,7 +1271,7 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
       </div>
 
       {/* Business Unit Form Modal */}
-      {editingUnit && (
+      {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <form onSubmit={handleSave}>
@@ -1259,6 +1283,7 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
                   type="button"
                   onClick={() => {
                     setEditingUnit(null);
+                    setShowForm(false);
                     setFormData({
                       name: '',
                       officialName: '',
