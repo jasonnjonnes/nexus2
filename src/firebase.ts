@@ -44,7 +44,7 @@ try {
     app = getApps()[0];
     console.log('🔥 Firebase: Using existing app instance');
   } else {
-    app = initializeApp(cfg, '[WEB]');
+    app = initializeApp(cfg); // Use default app name
     console.log('✅ Firebase: App initialized successfully');
   }
 } catch (error) {

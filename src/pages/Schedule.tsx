@@ -17,11 +17,9 @@ import {
   Check
 } from 'lucide-react';
 import { format, addDays, startOfWeek, endOfWeek, addWeeks, addMonths, startOfMonth, endOfMonth, isSameDay, parseISO, eachDayOfInterval } from 'date-fns';
-import { initializeApp } from "firebase/app";
 import { 
-  getFirestore, collection, onSnapshot, query, where, doc, setDoc, deleteDoc, addDoc, getDocs, Firestore
+  collection, onSnapshot, query, where, doc, setDoc, deleteDoc, addDoc, getDocs
 } from "firebase/firestore";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
 import CalendarPicker from '../components/schedule/CalendarPicker';
 import BulkDeleteModal from '../components/schedule/BulkDeleteModal';
 import CreateShiftModal from '../components/schedule/CreateShiftModal';

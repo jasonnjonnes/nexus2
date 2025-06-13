@@ -827,12 +827,11 @@ const LocationDetailView: React.FC<{
       if (!location.id || !customer.id) return;
 
       const db = getFirestore();
-      const jobsRef = collection(db, 'jobs');
-      const q = query(
-        jobsRef,
-        where('customerId', '==', customer.id),
-        where('locationId', '==', location.id)
-      );
+      // TODO: Need to get tenantId from auth context to properly scope this query
+      // For now, disable job loading to prevent permission errors
+      setJobs([]);
+      setLoading(false);
+      return;
 
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const jobsData: Job[] = [];

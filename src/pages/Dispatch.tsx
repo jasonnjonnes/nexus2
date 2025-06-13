@@ -22,13 +22,12 @@ import {
 } from 'lucide-react';
 import { format, addDays, subDays } from 'date-fns';
 import { createPortal } from 'react-dom';
-import { initializeApp } from "firebase/app";
 import { 
-  getFirestore, collection, onSnapshot, query, where, updateDoc, doc, addDoc,
+  collection, onSnapshot, query, where, updateDoc, doc, addDoc,
   Firestore, DocumentData, QuerySnapshot, DocumentReference
 } from "firebase/firestore";
-import { getAuth, onAuthStateChanged, Auth, User as FirebaseUser } from "firebase/auth";
-import { db as sharedDb, auth as sharedAuth } from '../firebase';
+import { User as FirebaseUser } from "firebase/auth";
+import { db as sharedDb } from '../firebase';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 
 // Define TypeScript interfaces for the components
@@ -1464,18 +1463,13 @@ const Dispatch = () => {
     setCurrentDate(new Date());
   };
 
-  // Initialize Firebase
+  // Initialize user state from Firebase Auth Context
   useEffect(() => {
-    const unsub = onAuthStateChanged(sharedAuth, (user) => {
-      if (user) {
-        setUserId(user.uid);
-        setIsLoading(false);
-      } else {
-        window.location.href = '/login';
-      }
-    });
-    return () => unsub();
-  }, []);
+    if (user) {
+      setUserId(user.uid);
+      setIsLoading(false);
+    }
+  }, [user, tenantId]);
 
   // Force refresh function
   const handleRefresh = useCallback(() => {

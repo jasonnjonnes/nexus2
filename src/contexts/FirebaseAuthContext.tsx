@@ -11,15 +11,8 @@ import {
   GoogleAuthProvider,
   signInWithPopup
 } from 'firebase/auth';
-import { initializeApp } from 'firebase/app';
 import { useNavigate, useLocation } from 'react-router-dom';
-
-// Load Firebase config injected by Vite
-const firebaseCfg: any = typeof __firebase_config === 'string' ? JSON.parse(__firebase_config) : __firebase_config;
-
-// Prevent duplicate apps during Vite HMR
-const firebaseApp = initializeApp(firebaseCfg, '[WEB]');
-const auth = getAuth(firebaseApp);
+import { auth } from '../firebase';
 setPersistence(auth, browserLocalPersistence);
 
 interface AuthContextType {

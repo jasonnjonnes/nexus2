@@ -3,6 +3,7 @@ import { collection, getFirestore, onSnapshot, addDoc, updateDoc, doc, serverTim
 import { Plus, Edit, Trash2, X, Check, MoreHorizontal } from 'lucide-react';
 import { GLAccount } from '../types/pricebook';
 import { Menu } from '@headlessui/react';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 
 const STANDARD_ACCOUNTS: Omit<GLAccount, 'id' | 'active' | 'createdAt' | 'updatedAt'>[] = [
   { accountNumber: '1-001', accountName: 'Cash', type: 'Asset', subtype: '', description: 'Cash', },
@@ -38,6 +39,7 @@ const ACCOUNT_TYPES = ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense', 'Ot
 
 const GLAccounts: React.FC = () => {
   const db = getFirestore();
+  const { tenantId } = useFirebaseAuth();
   const [accounts, setAccounts] = useState<GLAccount[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
@@ -55,7 +57,9 @@ const GLAccounts: React.FC = () => {
 
   // Load accounts and pre-populate if empty
   useEffect(() => {
-    const ref = collection(db, 'glAccounts');
+    if (!tenantId) return;
+    
+    const ref = collection(db, 'tenants', tenantId, 'glAccounts');
     const unsub = onSnapshot(ref, snap => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GLAccount[];
       setAccounts(data);
@@ -75,7 +79,7 @@ const GLAccounts: React.FC = () => {
       }
     });
     return () => unsub();
-  }, [db]);
+  }, [db, tenantId]);
 
   // Modal open for add/edit
   const openModal = (acc?: GLAccount) => {
@@ -105,17 +109,19 @@ const GLAccounts: React.FC = () => {
 
   // Save (add or update)
   const handleSave = async () => {
+    if (!tenantId) return;
+    
     setLoading(true);
     try {
       if (editing) {
         // Update
-        await updateDoc(doc(db, 'glAccounts', editing.id), {
+        await updateDoc(doc(db, 'tenants', tenantId, 'glAccounts', editing.id), {
           ...form,
           updatedAt: serverTimestamp(),
         });
       } else {
         // Add
-        await addDoc(collection(db, 'glAccounts'), {
+        await addDoc(collection(db, 'tenants', tenantId, 'glAccounts'), {
           ...form,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -129,9 +135,11 @@ const GLAccounts: React.FC = () => {
 
   // Bulk activate/deactivate
   const handleBulkStatus = async (active: boolean) => {
+    if (!tenantId) return;
+    
     const batch = writeBatch(db);
     selectedIds.forEach(id => {
-      batch.update(doc(db, 'glAccounts', id), { active, updatedAt: serverTimestamp() });
+      batch.update(doc(db, 'tenants', tenantId, 'glAccounts', id), { active, updatedAt: serverTimestamp() });
     });
     await batch.commit();
     setSelectedIds([]);

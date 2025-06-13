@@ -5,11 +5,9 @@ import {
   FileText, Pen, Check, DollarSign, Package, Phone, Mail, User,
   Tag, Paperclip, MessageSquare, Eye, Calculator
 } from 'lucide-react';
-import { initializeApp } from "firebase/app";
 import { 
-  getFirestore, doc, getDoc, onSnapshot, updateDoc, addDoc, collection, query, where
+  doc, getDoc, onSnapshot, updateDoc, addDoc, collection, query, where
 } from "firebase/firestore";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import { db } from '../firebase';
 

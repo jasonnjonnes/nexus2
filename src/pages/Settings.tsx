@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronDown, ChevronRight, Search, Plus, X, User, Mail, Phone, MapPin, Calendar, Shield, Building, Camera, Edit, Palette, Upload, Image, UserPlus } from 'lucide-react';
-import { initializeApp, FirebaseOptions } from "firebase/app";
 import { 
-  getFirestore, Firestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, 
+  Firestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, 
   query, where, setDoc, getDocs 
 } from "firebase/firestore";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
 import GLAccounts from '../components/GLAccounts';
 import StaffInvitationModal from '../components/StaffInvitationModal';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
