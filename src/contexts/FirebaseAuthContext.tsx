@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
 import {
   getAuth,
   onAuthStateChanged,
@@ -46,9 +46,9 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // Custom claims that drive multi-tenant access
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
-
-  const navigate = useNavigate();
-  const location = useLocation();
+  
+  // Debug logging
+  console.log('FirebaseAuthProvider render:', { user: user?.email, loading, tenantId, role });
 
   useEffect(() => {
     console.log('onAuthStateChanged useEffect running');
@@ -64,10 +64,6 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
         } catch (err) {
           console.warn('Failed to load custom claims', err);
         }
-        // Redirect to dashboard if not already there or on login
-        if (location.pathname === '/login' || location.pathname === '/') {
-          navigate('/dashboard');
-        }
       } else {
         setTenantId(null);
         setRole(null);
@@ -79,7 +75,7 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.log('onAuthStateChanged useEffect unsubscribing');
       unsub();
     };
-  }, [navigate]);
+  }, []); // Empty dependency array to prevent loops
 
   const wrap = async (fn: () => Promise<any>) => {
     setError(null);

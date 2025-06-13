@@ -155,6 +155,9 @@ const Dashboard: React.FC = () => {
   const { user, tenantId } = useFirebaseAuth();
   const userId = user?.uid || null;
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Debug logging
+  console.log('Dashboard render:', { user: user?.email, tenantId, userId, isLoading });
 
   // Data state
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -189,7 +192,12 @@ const Dashboard: React.FC = () => {
 
   // Load data from Firebase
   useEffect(() => {
-    if (!db || !userId || !tenantId) return;
+    if (!db || !userId || !tenantId) {
+      console.log('Dashboard: Missing required data for Firebase queries', { db: !!db, userId, tenantId });
+      return;
+    }
+    
+    console.log('Dashboard: Setting up Firebase listeners', { userId, tenantId });
 
     const unsubscribes: Unsubscribe[] = [];
 
@@ -278,10 +286,17 @@ const Dashboard: React.FC = () => {
     };
   }, [db, userId, tenantId]);
 
-  // Set loading to false once we have initial data
+  // Set loading to false once we have initial data or after a timeout
   useEffect(() => {
     if (jobs.length > 0 || invoices.length > 0 || estimates.length > 0 || customers.length > 0) {
       setIsLoading(false);
+    } else {
+      // Set a timeout to stop loading even if no data is found
+      const timeout = setTimeout(() => {
+        setIsLoading(false);
+      }, 3000); // 3 second timeout
+      
+      return () => clearTimeout(timeout);
     }
   }, [jobs, invoices, estimates, customers]);
 
