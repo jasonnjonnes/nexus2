@@ -7,7 +7,7 @@ interface ProtectedRouteProps {
   adminOnly?: boolean;
 }
 
-export function BasicProtectedRoute({ children, adminOnly = false }: ProtectedRouteProps) {
+export function BasicProtectedRoute({ children, adminOnly: _ = false }: ProtectedRouteProps) {
   const { user, loading } = useFirebaseAuth();
   const location = useLocation();
 

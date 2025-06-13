@@ -1,4 +1,4 @@
-import { getFirestore, collection, doc, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, writeBatch } from 'firebase/firestore';
 import { SERVICETITAN_CATEGORY_MAPPING } from './pricebookImport';
 
 // Default price rules

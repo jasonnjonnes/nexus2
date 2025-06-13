@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  ArrowLeft, Edit, Save, X, MapPin, Phone, Mail, 
+  ArrowLeft, Edit, X, MapPin, Phone, Mail, 
   Building, Home, Briefcase, FileText, Trash2, Plus,
-  Calendar, DollarSign, User, Clock, Check, Star, Search,
-  Users, Zap, MessageSquare, Camera, Paperclip, Award,
+  Calendar, DollarSign, Clock, Check, Search,
+  Users, Camera, Paperclip, Award,
   ClipboardList, TrendingUp, PhoneCall
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -26,7 +26,7 @@ declare namespace google.maps.places {
   class Autocomplete {
     constructor(input: HTMLInputElement, options?: object);
     addListener(event: string, handler: () => void): void;
-    getPlace(): any;
+    getPlace(): google.maps.places.PlaceResult;
   }
 }
 
@@ -1401,8 +1401,8 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, onBac
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const InteractiveCustomerNotes = (props: any) => null;
+const InteractiveCustomerNotes = (props: Record<string, unknown>) => null;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const EmptySection = (props: any) => null;
+const EmptySection = (props: Record<string, unknown>) => null;
 
 export default CustomerDetailView;

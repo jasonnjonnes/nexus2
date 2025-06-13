@@ -11,13 +11,8 @@ import {
   Mail,
   Bell,
   FileText,
-  User,
   Calendar,
   DollarSign,
-  AlertCircle,
-  Check,
-  CheckCircle,
-  XCircle,
   ClipboardList
 } from 'lucide-react';
 

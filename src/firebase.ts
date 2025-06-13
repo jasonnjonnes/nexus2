@@ -2,8 +2,19 @@ import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getAuth, Auth } from 'firebase/auth';
 
+// Firebase configuration interface
+interface FirebaseConfig {
+  apiKey: string;
+  authDomain: string;
+  projectId: string;
+  storageBucket: string;
+  messagingSenderId: string;
+  appId: string;
+  measurementId: string;
+}
+
 // Load compile-time injected config (see vite.config.ts)
-let cfg: any;
+let cfg: FirebaseConfig;
 
 try {
   // Check if the global config is available

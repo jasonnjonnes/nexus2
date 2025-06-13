@@ -43,7 +43,7 @@ export class BasicAuthService {
     const users: StoredUser[] = JSON.parse(usersJson);
     
     // Return users without password hashes
-    return users.map(({ passwordHash, ...user }) => user);
+    return users.map(({ passwordHash: _, ...user }) => user);
   }
 
   // Create a new user
@@ -75,7 +75,7 @@ export class BasicAuthService {
     localStorage.setItem(this.USERS_STORAGE_KEY, JSON.stringify(users));
     
     // Return user without password hash
-    const { passwordHash, ...user } = newUser;
+    const { passwordHash: _, ...user } = newUser;
     return user;
   }
 
@@ -92,7 +92,7 @@ export class BasicAuthService {
     }
     
     // Store current user in session
-    const { passwordHash, ...userWithoutPassword } = user;
+    const { passwordHash: _, ...userWithoutPassword } = user;
     localStorage.setItem(this.CURRENT_USER_KEY, JSON.stringify(userWithoutPassword));
     
     return userWithoutPassword;

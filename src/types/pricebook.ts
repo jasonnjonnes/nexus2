@@ -273,7 +273,7 @@ export interface MarkupTier {
 
 // Import/Export interfaces
 export interface ImportResult {
-  data: any[];
+  data: Record<string, unknown>[];
   errors: string[];
   warnings: string[];
   headers?: string[];
@@ -370,8 +370,8 @@ export interface GLAccount {
   subtype: string;
   description: string;
   active: boolean;
-  createdAt: any;
-  updatedAt: any;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 export interface EquipmentFormState {

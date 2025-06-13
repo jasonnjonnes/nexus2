@@ -6,6 +6,7 @@ import { BasicRegister } from './pages/BasicRegister';
 import InviteSignup from './pages/InviteSignup';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
+import ApiTest from './components/ApiTest';
 import Inbound from './pages/Inbound';
 import Schedule from './pages/Schedule';
 import Dispatch from './pages/Dispatch';
@@ -159,6 +160,16 @@ export default function App() {
               <BasicProtectedRoute>
                 <Layout>
                   <Payroll />
+                </Layout>
+              </BasicProtectedRoute>
+            }
+          />
+          <Route
+            path="/api-test"
+            element={
+              <BasicProtectedRoute>
+                <Layout>
+                  <ApiTest />
                 </Layout>
               </BasicProtectedRoute>
             }
