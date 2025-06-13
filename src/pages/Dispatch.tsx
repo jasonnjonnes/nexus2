@@ -182,7 +182,7 @@ interface NewJobPanelProps {
   onJobCreated: () => void;
   db: Firestore | null;
   userId: string | null;
-  companyId: string | null;
+  tenantId: string | null;
 }
 
 // --- CONSTANTS & HELPERS ---
@@ -969,7 +969,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, isOpen, onClose,
 };
 
 // --- NEW JOB PANEL ---
-const NewJobPanel: React.FC<NewJobPanelProps> = ({ isOpen, onClose, customers, technicians, onJobCreated, db, userId, companyId }) => {
+const NewJobPanel: React.FC<NewJobPanelProps> = ({ isOpen, onClose, customers, technicians, onJobCreated, db, userId, tenantId }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
@@ -1070,12 +1070,12 @@ const NewJobPanel: React.FC<NewJobPanelProps> = ({ isOpen, onClose, customers, t
         userId: userId
       };
 
-      if (!companyId) {
+      if (!tenantId) {
         alert('Missing company context, please reload.');
         return;
       }
 
-      await addDoc(collection(db, 'companies', companyId, 'jobs'), jobData);
+      await addDoc(collection(db, 'tenants', tenantId, 'jobs'), jobData);
       
       // Reset form and close panel
       setJobForm({
@@ -1421,7 +1421,7 @@ const JobCard: React.FC<JobCardProps> = ({ job, onDragStart, isDragging, level, 
 // --- MAIN DISPATCH COMPONENT ---
 const Dispatch = () => {
   // Multi-tenant info from Firebase custom claims
-  const { user, companyId } = useFirebaseAuth();
+  const { user, tenantId } = useFirebaseAuth();
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -1494,12 +1494,12 @@ const Dispatch = () => {
 
   // Load active technicians from Firebase
   useEffect(() => {
-    if (!db || !userId || !companyId) return;
+    if (!db || !userId || !tenantId) return;
 
     console.log('🔄 Loading technicians... (version:', dataVersion, ')');
 
     const techQuery = query(
-      collection(db, 'companies', companyId!, 'staff'),
+      collection(db, 'tenants', tenantId!, 'staff'),
       where("userId", "==", userId),
       where("staffType", "==", "technician"),
       where("status", "==", "active")
@@ -1532,14 +1532,14 @@ const Dispatch = () => {
     });
     
     return () => unsubscribe();
-  }, [db, userId, companyId, dataVersion]);
+  }, [db, userId, tenantId, dataVersion]);
 
   // Load customers from Firebase
   useEffect(() => {
-    if (!db || !userId || !companyId) return;
+    if (!db || !userId || !tenantId) return;
 
     const customersQuery = query(
-      collection(db, 'companies', companyId!, 'customers'),
+      collection(db, 'tenants', tenantId!, 'customers'),
       where("userId", "==", userId)
     );
     
@@ -1560,11 +1560,11 @@ const Dispatch = () => {
     });
     
     return () => unsubscribe();
-  }, [db, userId, companyId]);
+  }, [db, userId, tenantId]);
 
   // Load shifts with the correct collection name and structure
   useEffect(() => {
-    if (!db || !userId || !companyId) return;
+    if (!db || !userId || !tenantId) return;
 
     console.log('🔄 Loading shifts for current date... (version:', dataVersion, ')');
     
@@ -1572,7 +1572,7 @@ const Dispatch = () => {
     console.log('Looking for shifts on date:', currentDateStr);
     
     const shiftsQuery = query(
-      collection(db, 'companies', companyId!, 'shifts'),
+      collection(db, 'tenants', tenantId!, 'shifts'),
       where("userId", "==", userId),
       where("startDate", "==", currentDateStr)
     );
@@ -1600,7 +1600,7 @@ const Dispatch = () => {
     });
 
     return () => unsubscribe();
-  }, [db, userId, currentDate, dataVersion, companyId]);
+  }, [db, userId, currentDate, dataVersion, tenantId]);
 
   // Get technician shift with the correct data structure
   const getTechnicianShiftForToday = useCallback((technicianId: string): Shift | undefined => {
@@ -1655,7 +1655,7 @@ const Dispatch = () => {
 
   // Load jobs from Firebase - FIXED: Multi-technician support
   useEffect(() => {
-    if (!db || !userId || !companyId) return;
+    if (!db || !userId || !tenantId) return;
 
     console.log('🔄 Loading jobs... (version:', dataVersion, ')');
     
@@ -1663,7 +1663,7 @@ const Dispatch = () => {
     console.log('Loading jobs for date:', currentDateStr);
 
     const jobsQuery = query(
-      collection(db, 'companies', companyId!, 'jobs'),
+      collection(db, 'tenants', tenantId!, 'jobs'),
       where("userId", "==", userId),
       where("startDate", "==", currentDateStr)
     );
@@ -1746,7 +1746,7 @@ const Dispatch = () => {
     });
     
     return () => unsubscribe();
-  }, [db, userId, technicians, dataVersion, currentDate, companyId]);
+  }, [db, userId, technicians, dataVersion, currentDate, tenantId]);
 
   // Check if technician has shift for current time
   const technicianHasShift = (technicianId: string, startTime: string): boolean => {
@@ -1969,7 +1969,7 @@ const Dispatch = () => {
             return;
           }
           try {
-            await updateDoc(doc(db, 'companies', companyId!, 'jobs', jobId), {
+            await updateDoc(doc(db, 'tenants', tenantId!, 'jobs', jobId), {
               technician: appointments[0]?.technician || '',
               startTime: appointments[0]?.startTime || '',
               endTime: appointments[0]?.endTime || '',
@@ -2011,7 +2011,7 @@ const Dispatch = () => {
                 };
               }
             });
-            await updateDoc(doc(db, 'companies', companyId!, 'jobs', jobId), {
+            await updateDoc(doc(db, 'tenants', tenantId!, 'jobs', jobId), {
               appointments,
               updatedAt: new Date().toISOString()
             });
@@ -2029,7 +2029,7 @@ const Dispatch = () => {
       try {
         const jobId = pendingJobAssignment.job.originalId || pendingJobAssignment.job.id;
         const appointments = pendingJobAssignment.job.appointments || [];
-        await updateDoc(doc(db, 'companies', companyId!, 'jobs', jobId), {
+        await updateDoc(doc(db, 'tenants', tenantId!, 'jobs', jobId), {
           technician: appointments[0]?.technician || '',
           startTime: appointments[0]?.startTime || '',
           endTime: appointments[0]?.endTime || '',
@@ -2091,7 +2091,7 @@ const Dispatch = () => {
         setShowShiftWarning(true);
         return;
       }
-      await updateDoc(doc(db, 'companies', companyId!, 'jobs', jobData.id), {
+      await updateDoc(doc(db, 'tenants', tenantId!, 'jobs', jobData.id), {
         technician: technician.name,
         startTime: updatedJob.startTime,
         endTime: updatedJob.endTime,
@@ -2146,7 +2146,7 @@ const Dispatch = () => {
         const jobId = originalId || id; // Use originalId for multi-tech jobs
         
         // Update the job document with the new appointments array
-        await updateDoc(doc(db, 'companies', companyId!, 'jobs', jobId), {
+        await updateDoc(doc(db, 'tenants', tenantId!, 'jobs', jobId), {
           ...jobData,
           updatedAt: new Date().toISOString()
         });
@@ -2182,7 +2182,7 @@ const Dispatch = () => {
     }
   }, []);
 
-  if (isLoading || !companyId) {
+  if (isLoading || !tenantId) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-slate-900">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -2616,7 +2616,7 @@ const Dispatch = () => {
         onJobCreated={handleJobCreated}
         db={db}
         userId={userId}
-        companyId={companyId}
+        tenantId={tenantId}
       />
 
       {/* Shift Warning Modal */}

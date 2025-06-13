@@ -2,14 +2,15 @@ import React, { useState } from 'react';
 import { Dialog } from '@headlessui/react';
 import { X } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { getFirestore, collection, doc, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, setDoc, writeBatch } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface CustomerImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onComplete?: () => void;
   userId?: string;
-  companyId?: string;
+  tenantId?: string;
   pauseListener?: () => void;
 }
 
@@ -41,7 +42,8 @@ const FIELD_MAP: { [key: string]: string } = {
   'Membership Termination Date': 'membershipTerminationDate'
 };
 
-const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClose, onComplete, userId, companyId, pauseListener }) => {
+const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClose, onComplete, userId, tenantId, pauseListener }) => {
+  console.log('CustomerImportModal props:', { userId, tenantId, isOpen });
   const [step, setStep] = useState<'upload' | 'preview' | 'importing' | 'done'>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [rows, setRows] = useState<any[]>([]);
@@ -50,7 +52,6 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
   const [successCount, setSuccessCount] = useState(0);
   const [failCount, setFailCount] = useState(0);
   const [currentImportIndex, setCurrentImportIndex] = useState(0);
-  const db = getFirestore();
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -101,8 +102,8 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
   };
 
   const handleImport = async () => {
-    if (!companyId) {
-      setErrors(prev => [...prev, 'Error: companyId is missing. Please reload and try again.']);
+    if (!tenantId) {
+      setErrors(prev => [...prev, 'Error: tenantId is missing. Please reload and try again.']);
       return;
     }
     if (pauseListener) pauseListener();
@@ -279,12 +280,12 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
               
               // Add to batch
               console.log('About to add to batch:', {
-                companyId,
+                tenantId,
                 id,
                 db,
                 customer
               });
-              batch.set(doc(db, 'companies', companyId!, 'customers', id), { 
+              batch.set(doc(db, 'tenants', tenantId!, 'customers', id), { 
                 ...customer, 
                 id, 
                 ...(userId ? { userId } : {}),
@@ -343,9 +344,9 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
     console.log('Import complete. Success:', success, 'Fail:', fail);
     setSuccessCount(success);
     setFailCount(fail);
-    // Log summary and last used companyId/id/db/customer at the end for easier debugging
+    // Log summary and last used tenantId/id/db/customer at the end for easier debugging
     console.log('IMPORT SUMMARY:', {
-      companyId,
+      tenantId,
       lastId,
       db,
       lastCustomer,
@@ -387,7 +388,12 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
               </table>
               {rows.length > 10 && <div className="text-xs text-gray-500 mt-2">Showing first 10 rows of {rows.length} total</div>}
             </div>
-            <button onClick={handleImport} className="px-4 py-2 bg-blue-600 text-white rounded">Import</button>
+            {(!tenantId || !userId) && (
+              <div className="mb-2 text-red-600 dark:text-red-400 font-semibold">
+                Error: User or tenant not ready yet. Please wait, then try again.
+              </div>
+            )}
+            <button onClick={handleImport} className="px-4 py-2 bg-blue-600 text-white rounded" disabled={!tenantId || !userId}>Import</button>
             <button onClick={onClose} className="ml-2 px-4 py-2 border rounded">Cancel</button>
           </div>
         )}

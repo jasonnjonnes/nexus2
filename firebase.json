@@ -4,5 +4,16 @@
     "location": "nam5",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "apphosting": {
+    "backendId": "nexus",
+    "rootDir": "dist",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "firebase-debug.log",
+      "firebase-debug.*.log",
+      "functions"
+    ]
   }
 }

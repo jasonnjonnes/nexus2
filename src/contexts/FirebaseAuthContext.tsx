@@ -26,8 +26,8 @@ interface AuthContextType {
   user: FirebaseUser | null;
   loading: boolean;
   error: string | null;
-  /** Firebase custom claim: company identifier (null until loaded) */
-  companyId: string | null;
+  /** Firebase custom claim: tenant identifier (null until loaded) */
+  tenantId: string | null;
   /** Firebase custom claim: role name such as 'admin', 'office', 'technician' */
   role: string | null;
   login: (email: string, password: string) => Promise<void>;
@@ -44,7 +44,7 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [error, setError] = useState<string | null>(null);
 
   // Custom claims that drive multi-tenant access
-  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [tenantId, setTenantId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
 
   const navigate = useNavigate();
@@ -56,7 +56,7 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (u) {
         try {
           const tokenRes = await u.getIdTokenResult(); // do not force refresh
-          setCompanyId((tokenRes.claims as any).companyId ?? null);
+          setTenantId((tokenRes.claims as any).tenantId ?? null);
           setRole((tokenRes.claims as any).role ?? null);
           console.log('User signed in:', u.email, 'Claims:', tokenRes.claims);
         } catch (err) {
@@ -67,7 +67,7 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
           navigate('/dashboard');
         }
       } else {
-        setCompanyId(null);
+        setTenantId(null);
         setRole(null);
         console.log('No user signed in');
       }
@@ -110,13 +110,13 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     user,
     loading,
     error,
-    companyId,
+    tenantId,
     role,
     login,
     register,
     logout,
     signInWithGoogle
-  }), [user, loading, error, companyId, role]);
+  }), [user, loading, error, tenantId, role]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

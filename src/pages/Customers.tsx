@@ -150,7 +150,7 @@ const Customers = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const customersPerPage = 25;
   const [unsubscribeCustomers, setUnsubscribeCustomers] = useState(null);
-  const { companyId } = useFirebaseAuth();
+  const { tenantId } = useFirebaseAuth();
 
   // Listen for auth changes
   useEffect(() => {
@@ -167,10 +167,10 @@ const Customers = () => {
 
   // Set up Firestore listener for customers
   useEffect(() => {
-    if (!db || !userId) {
+    if (!db || !userId || !tenantId) {
       return;
     }
-    const customerCollectionPath = 'customers';
+    const customerCollectionPath = `tenants/${tenantId}/customers`;
     const q = query(
       collection(db, customerCollectionPath),
       where("userId", "==", userId)
@@ -187,7 +187,7 @@ const Customers = () => {
     });
     setUnsubscribeCustomers(() => unsubscribe);
     return () => unsubscribe();
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   // Helper to pause/resume listener
   const pauseCustomerListener = () => {
@@ -201,10 +201,10 @@ const Customers = () => {
 
   const handleCreateCustomer = useCallback(async (newCustomerData) => { 
     console.log('➕ Creating customer:', newCustomerData);
-    if (db && userId) { 
+    if (db && userId && tenantId) { 
       try { 
-        // Use simple collection path
-        const customerCollectionPath = 'customers';
+        // Use tenant-scoped collection path
+        const customerCollectionPath = `tenants/${tenantId}/customers`;
         console.log('📂 Adding to collection:', customerCollectionPath);
         
         // Add userId to the customer data for filtering
@@ -223,7 +223,7 @@ const Customers = () => {
         
         // Fall back to addDoc if setDoc fails
         try {
-          const docRef = await addDoc(collection(db, customerCollectionPath), {
+          const docRef = await addDoc(collection(db, `tenants/${tenantId}/customers`), {
             ...newCustomerData,
             userId: userId
           });
@@ -235,24 +235,22 @@ const Customers = () => {
         }
       } 
     } else {
-      console.error('❌ DB or userId not available:', { db: !!db, userId });
+      console.error('❌ DB, userId, or tenantId not available:', { db: !!db, userId, tenantId });
       setError("Database not ready. Please try again.");
     }
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   const handleUpdateCustomer = useCallback(async (updatedCustomer) => { 
     console.log('✏️ Updating customer:', updatedCustomer);
-    if (db && userId) { 
+    if (db && userId && tenantId) { 
       const { id, ...data } = updatedCustomer; 
-      
       // Ensure userId is preserved
       const updateData = {
         ...data,
         userId: userId // Make sure userId stays the same
       };
-      
       try { 
-        const customerDocPath = `customers/${id}`;
+        const customerDocPath = `tenants/${tenantId}/customers/${id}`;
         console.log('📝 Updating document at:', customerDocPath);
         await updateDoc(doc(db, customerDocPath), updateData); 
         console.log('✅ Customer updated successfully');
@@ -261,14 +259,14 @@ const Customers = () => {
         setError("Failed to update customer: " + e.message); 
       } 
     } 
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   const handleDeleteCustomer = useCallback(async (customerId) => { 
     console.log('🗑️ Deleting customer:', customerId);
-    if (db && userId) { 
+    if (db && userId && tenantId) { 
       if (window.confirm("Are you sure you want to delete this customer? This action cannot be undone.")) { 
         try { 
-          const customerDocPath = `customers/${customerId}`;
+          const customerDocPath = `tenants/${tenantId}/customers/${customerId}`;
           console.log('🗑️ Deleting document at:', customerDocPath);
           await deleteDoc(doc(db, customerDocPath)); 
           console.log('✅ Customer deleted successfully');
@@ -280,7 +278,7 @@ const Customers = () => {
         } 
       } 
     } 
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   const handleCustomerClick = (customerId) => { 
     setSelectedCustomerId(customerId); 
@@ -557,7 +555,7 @@ const Customers = () => {
               onClose={() => setShowCustomerImport(false)}
               onComplete={() => { resumeCustomerListener(); }}
               userId={userId}
-              companyId={companyId}
+              tenantId={tenantId}
               pauseListener={pauseCustomerListener}
             />
           )}
