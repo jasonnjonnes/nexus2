@@ -448,9 +448,55 @@ const EstimateDetail = () => {
 
   // Only fetch data if db and userId are present
   useEffect(() => {
-    if (!db || !userId) return;
-    // ... fetch company profile, estimate, etc. as before ...
-  }, [db, userId, estimateId]);
+    if (!db || !userId || !tenantId || !estimateId) {
+      setIsLoading(false);
+      return;
+    }
+
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        // Fetch estimate
+        const estimateDoc = await getDoc(doc(db, 'tenants', tenantId, 'estimates', estimateId));
+        if (!estimateDoc.exists()) {
+          setError('Estimate not found');
+          setIsLoading(false);
+          return;
+        }
+
+        const estimateData = { id: estimateDoc.id, ...estimateDoc.data() };
+        setEstimate(estimateData);
+        setEditData({
+          summary: estimateData.summary || '',
+          description: estimateData.description || '',
+          services: estimateData.services || [],
+          materials: estimateData.materials || [],
+          notes: estimateData.notes || '',
+          tags: estimateData.tags || [],
+          attachments: estimateData.attachments || [],
+          taxRate: estimateData.taxRate || 0
+        });
+
+        // Fetch business unit if specified
+        if (estimateData.businessUnitId) {
+          const businessUnitDoc = await getDoc(doc(db, 'tenants', tenantId, 'businessUnits', estimateData.businessUnitId));
+          if (businessUnitDoc.exists()) {
+            setBusinessUnit({ id: businessUnitDoc.id, ...businessUnitDoc.data() });
+          }
+        }
+
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error fetching estimate data:', error);
+        setError('Failed to load estimate data');
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [db, userId, tenantId, estimateId]);
 
   // Save estimate
   const saveEstimate = useCallback(async () => {

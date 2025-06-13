@@ -617,9 +617,64 @@ const InvoiceDetail = () => {
 
   // Only fetch data if db and userId are present
   useEffect(() => {
-    if (!db || !userId) return;
-    // ... fetch company profile, invoice, etc. as before ...
-  }, [db, userId, invoiceId]);
+    if (!db || !userId || !tenantId || !invoiceId) {
+      setIsLoading(false);
+      return;
+    }
+
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        // Fetch invoice
+        const invoiceDoc = await getDoc(doc(db, 'tenants', tenantId, 'invoices', invoiceId));
+        if (!invoiceDoc.exists()) {
+          setError('Invoice not found');
+          setIsLoading(false);
+          return;
+        }
+
+        const invoiceData = { id: invoiceDoc.id, ...invoiceDoc.data() };
+        setInvoice(invoiceData);
+        setEditData({
+          summary: invoiceData.summary || '',
+          description: invoiceData.description || '',
+          services: invoiceData.services || [],
+          materials: invoiceData.materials || [],
+          payments: invoiceData.payments || [],
+          notes: invoiceData.notes || '',
+          tags: invoiceData.tags || [],
+          attachments: invoiceData.attachments || [],
+          taxRate: invoiceData.taxRate || 0
+        });
+
+        // Fetch business unit if specified
+        if (invoiceData.businessUnitId) {
+          const businessUnitDoc = await getDoc(doc(db, 'tenants', tenantId, 'businessUnits', invoiceData.businessUnitId));
+          if (businessUnitDoc.exists()) {
+            setBusinessUnit({ id: businessUnitDoc.id, ...businessUnitDoc.data() });
+          }
+        }
+
+        // Fetch customer if specified
+        if (invoiceData.customerId) {
+          const customerDoc = await getDoc(doc(db, 'tenants', tenantId, 'customers', invoiceData.customerId));
+          if (customerDoc.exists()) {
+            setCustomer({ id: customerDoc.id, ...customerDoc.data() });
+          }
+        }
+
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error fetching invoice data:', error);
+        setError('Failed to load invoice data');
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [db, userId, tenantId, invoiceId]);
 
   // Save invoice
   const saveInvoice = useCallback(async () => {
