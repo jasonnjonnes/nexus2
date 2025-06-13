@@ -8,8 +8,10 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  getFirestore, collection, query, where, onSnapshot
+  collection, query, where, onSnapshot
 } from "firebase/firestore";
+import { db } from '../firebase';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import TagInput from './TagInput';
 
 declare global {
@@ -128,6 +130,20 @@ export interface Customer {
   taxStatus?: string;
   invoiceSignatureRequired?: boolean;
   contacts?: Array<{ id: string; type: string; value: string; notes?: string; category?: string }>;
+}
+
+export interface Job {
+  id: string;
+  customerId: string;
+  status: string;
+  startDate?: string;
+  createdAt?: string;
+  total?: number;
+  amount?: number;
+  price?: number;
+  description?: string;
+  title?: string;
+  [key: string]: any;
 }
 
 // AddLocationModal props
@@ -889,6 +905,7 @@ export interface CustomerDetailViewProps {
 }
 const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, onBack, onUpdate, onDelete, onLocationClick }) => {
   const navigate = useNavigate();
+  const { tenantId } = useFirebaseAuth();
   const [showEditPanel, setShowEditPanel] = useState(false);
   const [showAddLocation, setShowAddLocation] = useState(false);
   const [customerJobs, setCustomerJobs] = useState<Job[]>([]);
@@ -898,9 +915,14 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, onBac
   useEffect(() => {
     const loadCustomerJobs = async () => {
       try {
-        const db = getFirestore();
+        if (!tenantId) {
+          console.log('No tenantId available, skipping job loading');
+          setIsLoadingJobs(false);
+          return;
+        }
+        
         const jobsQuery = query(
-          collection(db, 'jobs'),
+          collection(db, 'tenants', tenantId, 'jobs'),
           where('customerId', '==', customer.id)
         );
 
@@ -924,10 +946,10 @@ const CustomerDetailView: React.FC<CustomerDetailViewProps> = ({ customer, onBac
       }
     };
 
-    if (customer.id) {
+    if (customer.id && tenantId) {
       loadCustomerJobs();
     }
-  }, [customer.id]);
+  }, [customer.id, tenantId]);
 
   const getJobStatusColor = (status: string) => {
     switch (status) {

@@ -27,7 +27,7 @@ import {
   getFirestore, collection, onSnapshot, query, where, updateDoc, doc, addDoc,
   Firestore, DocumentData, QuerySnapshot, DocumentReference
 } from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged, Auth, User as FirebaseUser } from "firebase/auth";
+import { getAuth, onAuthStateChanged, Auth, User as FirebaseUser } from "firebase/auth";
 import { db as sharedDb, auth as sharedAuth } from '../firebase';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 
@@ -1494,9 +1494,13 @@ const Dispatch = () => {
 
   // Load active technicians from Firebase
   useEffect(() => {
-    if (!db || !userId || !tenantId) return;
+    if (!db || !userId || !tenantId) {
+      console.log('❌ Missing dependencies for technician loading:', { db: !!db, userId, tenantId });
+      return;
+    }
 
     console.log('🔄 Loading technicians... (version:', dataVersion, ')');
+    console.log('🔍 Query parameters:', { userId, tenantId, collection: `tenants/${tenantId}/staff` });
 
     const techQuery = query(
       collection(db, 'tenants', tenantId!, 'staff'),
@@ -2344,32 +2348,48 @@ const Dispatch = () => {
         <div className={`transition-all duration-300 ${showTechList ? 'w-64' : 'w-0'}`}>
           <div className={`w-64 border-r border-gray-200 dark:border-slate-700 overflow-y-auto h-full ${showTechList ? 'opacity-100' : 'opacity-0'}`}>
             <div className="p-4">
+              {/* Debug Info */}
+              <div className="mb-4 p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded text-xs">
+                <div>Technicians: {technicians.length}</div>
+                <div>User ID: {userId || 'None'}</div>
+                <div>Tenant ID: {tenantId || 'None'}</div>
+                <div>DB: {db ? 'Connected' : 'Not connected'}</div>
+              </div>
+              
               <div className="space-y-2">
-                {technicians.map(tech => (
-                  <label key={tech.id} className="flex items-start p-2 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer">
-                    <input type="checkbox" checked={selectedTechs.includes(tech.id)} onChange={() => toggleTechnician(tech.id)} className="mt-1 rounded border-gray-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-slate-700"/>
-                    <div className="ml-3 flex items-center">
-                      {tech.profilePicture ? (
-                        <img 
-                          src={tech.profilePicture} 
-                          alt={tech.name} 
-                          className="h-8 w-8 rounded-full object-cover mr-3"
-                        />
-                      ) : (
-                        <div 
-                          className="h-8 w-8 rounded-full flex items-center justify-center text-white text-sm mr-3"
-                          style={{ backgroundColor: tech.color }}
-                        >
-                          {tech.name.split(' ').map(n => n[0]).join('')}
+                {technicians.length === 0 ? (
+                  <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                    <Users size={48} className="mx-auto mb-2 opacity-50" />
+                    <p>No technicians found</p>
+                    <p className="text-xs mt-1">Check console for details</p>
+                  </div>
+                ) : (
+                  technicians.map(tech => (
+                    <label key={tech.id} className="flex items-start p-2 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer">
+                      <input type="checkbox" checked={selectedTechs.includes(tech.id)} onChange={() => toggleTechnician(tech.id)} className="mt-1 rounded border-gray-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-slate-700"/>
+                      <div className="ml-3 flex items-center">
+                        {tech.profilePicture ? (
+                          <img 
+                            src={tech.profilePicture} 
+                            alt={tech.name} 
+                            className="h-8 w-8 rounded-full object-cover mr-3"
+                          />
+                        ) : (
+                          <div 
+                            className="h-8 w-8 rounded-full flex items-center justify-center text-white text-sm mr-3"
+                            style={{ backgroundColor: tech.color }}
+                          >
+                            {tech.name.split(' ').map(n => n[0]).join('')}
+                          </div>
+                        )}
+                        <div>
+                          <div className="text-sm font-medium text-gray-800 dark:text-gray-100">{tech.name}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">{tech.role} • {tech.businessUnit || 'Unassigned'}</div>
                         </div>
-                      )}
-                      <div>
-                        <div className="text-sm font-medium text-gray-800 dark:text-gray-100">{tech.name}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">{tech.role} • {tech.businessUnit || 'Unassigned'}</div>
                       </div>
-                    </div>
-                  </label>
-                ))}
+                    </label>
+                  ))
+                )}
               </div>
             </div>
           </div>

@@ -26,5 +26,5 @@ export function BasicProtectedRoute({ children, adminOnly = false }: ProtectedRo
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  return <>{children}</>;
+  return <div>{children}</div>;
 } 

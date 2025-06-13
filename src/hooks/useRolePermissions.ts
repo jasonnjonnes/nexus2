@@ -44,7 +44,8 @@ const denyAll: RolePermissions = {
  * React hook that streams permission flags for the current user's role.
  * Permissions live in: /companies/{companyId}/roles/{role}
  */
-export const useRolePermissions = () =>   const { tenantId, role } = useFirebaseAuth();
+export const useRolePermissions = () => {
+  const { tenantId, role } = useFirebaseAuth();
   const [perms, setPerms] = useState<RolePermissions>(denyAll);
   const [loading, setLoading] = useState(true);
 

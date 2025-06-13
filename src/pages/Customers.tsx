@@ -17,6 +17,7 @@ import EstimateImportModal from '../components/EstimateImportModal';
 import LocationImportModal from '../components/LocationImportModal';
 import { Menu } from '@headlessui/react';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import { useLocation } from 'react-router-dom';
 
 // --- Helper Functions ---
 const getStatusColor = (status) => {
@@ -134,6 +135,7 @@ const CreateCustomerForm = ({ onCancel, onCreate }) => {
 };
 
 const Customers = () => {
+  const location = useLocation();
   const [view, setView] = useState('list');
   const [customers, setCustomers] = useState([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
@@ -149,8 +151,25 @@ const Customers = () => {
   const [showLocationImport, setShowLocationImport] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const customersPerPage = 25;
+  const [searchTerm, setSearchTerm] = useState('');
   const [unsubscribeCustomers, setUnsubscribeCustomers] = useState(null);
   const { tenantId } = useFirebaseAuth();
+
+  // Handle navigation from global search
+  useEffect(() => {
+    if (location.state?.selectedCustomerId) {
+      setSelectedCustomerId(location.state.selectedCustomerId);
+      setView('detail');
+      
+      if (location.state?.selectedLocationId) {
+        setSelectedLocationId(location.state.selectedLocationId);
+        setView('location');
+      }
+      
+      // Clear the state to prevent re-triggering
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   // Listen for auth changes
   useEffect(() => {
@@ -179,6 +198,24 @@ const Customers = () => {
       const customersData = [];
       querySnapshot.forEach((doc) => {
         const data = { id: doc.id, ...doc.data() };
+        
+        // Migration: Add locations array if missing but billingAddress exists
+        if (!Array.isArray(data.locations) && data.billingAddress) {
+          console.log('Migrating customer address to locations array:', data.name);
+          data.locations = [{
+            id: `loc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            name: 'Primary Location',
+            address: data.billingAddress,
+            isPrimary: true,
+            phone: data.phone || '',
+          }];
+          
+          // Update the document in Firestore
+          updateDoc(doc.ref, { locations: data.locations }).catch(err => {
+            console.error('Error updating customer locations:', err);
+          });
+        }
+        
         customersData.push(data);
       });
       setCustomers(customersData);
@@ -302,8 +339,27 @@ const Customers = () => {
     setSelectedLocationId(null);
   };
   
-  // Filter customers by current user
-  const userCustomers = customers.filter(customer => customer.userId === userId);
+  // Filter customers by current user and search term
+  const userCustomers = customers.filter(customer => {
+    if (customer.userId !== userId) return false;
+    
+    if (!searchTerm.trim()) return true;
+    
+    const term = searchTerm.toLowerCase();
+    return (
+      customer.name?.toLowerCase().includes(term) ||
+      customer.email?.toLowerCase().includes(term) ||
+      customer.phone?.toLowerCase().includes(term) ||
+      customer.company?.toLowerCase().includes(term) ||
+      customer.tags?.some(tag => tag.toLowerCase().includes(term)) ||
+      customer.locations?.some(location => 
+        location.address?.toLowerCase().includes(term) ||
+        location.name?.toLowerCase().includes(term) ||
+        location.city?.toLowerCase().includes(term) ||
+        location.state?.toLowerCase().includes(term)
+      )
+    );
+  });
   const customerData = selectedCustomerId ? userCustomers.find(c => c.id === selectedCustomerId) : null;
   const locationData = selectedLocationId && customerData ? 
     customerData.locations?.find(l => l.id === selectedLocationId) : null;
@@ -386,7 +442,16 @@ const Customers = () => {
             <div className="flex items-center space-x-2">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" size={18} />
-                <input type="text" placeholder="Search customers..." className="pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-slate-600" />
+                <input 
+                  type="text" 
+                  placeholder="Search customers..." 
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1); // Reset to first page when searching
+                  }}
+                  className="pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-slate-600" 
+                />
               </div>
               <button className="p-2.5 rounded-lg border hover:bg-gray-100 dark:hover:bg-slate-700 border-gray-300 dark:border-slate-600">
                 <Filter size={18} className="text-gray-600 dark:text-gray-300" />
@@ -417,7 +482,10 @@ const Customers = () => {
                   {({ active }) => (
                     <button
                       className={`w-full text-left px-4 py-2 text-sm ${active ? 'bg-gray-100 dark:bg-slate-700' : ''}`}
-                      onClick={() => setShowInvoiceImport(true)}
+                      onClick={() => {
+                        console.log('🔥 Invoice Import button clicked');
+                        setShowInvoiceImport(true);
+                      }}
                     >
                       Import Invoices
                     </button>
@@ -564,6 +632,8 @@ const Customers = () => {
               isOpen={showJobImport}
               onClose={() => setShowJobImport(false)}
               onComplete={() => {/* Optionally refresh jobs here */}}
+              userId={userId}
+              tenantId={tenantId}
             />
           )}
           {showInvoiceImport && (
@@ -571,6 +641,8 @@ const Customers = () => {
               isOpen={showInvoiceImport}
               onClose={() => setShowInvoiceImport(false)}
               onComplete={() => {/* Optionally refresh invoices here */}}
+              userId={userId}
+              tenantId={tenantId}
             />
           )}
           {showEstimateImport && (
@@ -578,6 +650,8 @@ const Customers = () => {
               isOpen={showEstimateImport}
               onClose={() => setShowEstimateImport(false)}
               onComplete={() => {/* Optionally refresh estimates here */}}
+              userId={userId}
+              tenantId={tenantId}
             />
           )}
           {showLocationImport && (
@@ -585,6 +659,8 @@ const Customers = () => {
               isOpen={showLocationImport}
               onClose={() => setShowLocationImport(false)}
               onComplete={() => {/* Optionally refresh locations here */}}
+              userId={userId}
+              tenantId={tenantId}
             />
           )}
         </div>

@@ -21,12 +21,14 @@ import { initializeApp } from "firebase/app";
 import { 
   getFirestore, collection, onSnapshot, query, where, doc, setDoc, deleteDoc, addDoc, getDocs, Firestore
 } from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 import CalendarPicker from '@/components/schedule/CalendarPicker';
 import BulkDeleteModal from '@/components/schedule/BulkDeleteModal';
 import CreateShiftModal from '@/components/schedule/CreateShiftModal';
 import UnscheduledWarningModal from '@/components/schedule/UnscheduledWarningModal';
 import { StaffMember, Shift, ShiftCreationData, ShiftDeletionData } from '@/types/schedule';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import { db } from '../firebase';
 
 declare global {
   interface Window {
@@ -46,8 +48,8 @@ const Schedule: React.FC = () => {
     timeOff: true
   });
   
-  const [db, setDb] = useState<Firestore | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  const { user, tenantId } = useFirebaseAuth();
+  const userId = user?.uid;
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -56,54 +58,10 @@ const Schedule: React.FC = () => {
   const [selectedStaffFilter, setSelectedStaffFilter] = useState('');
 
   useEffect(() => {
-    const initializeFirebase = async () => {
-      try {
-        if (typeof window.__firebase_config === 'undefined' || !window.__firebase_config) {
-          setError("Firebase configuration is missing");
-          setIsLoading(false);
-          return;
-        }
-        
-        let firebaseConfig;
-        if (typeof window.__firebase_config === 'string') {
-          firebaseConfig = JSON.parse(window.__firebase_config);
-        } else {
-          firebaseConfig = window.__firebase_config;
-        }
-
-        const app = initializeApp(firebaseConfig);
-        const firestore = getFirestore(app);
-        const auth = getAuth(app);
-        
-        setDb(firestore);
-        
-        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-          if (user) {
-            setUserId(user.uid);
-            setIsLoading(false);
-          } else {
-            // Redirect to login or show a message
-            window.location.href = '/login';
-            setIsLoading(false);
-          }
-        });
-        
-        return () => unsubscribeAuth();
-      } catch (e) {
-        console.error("Error initializing Firebase:", e);
-        setError("Firebase initialization failed");
-        setIsLoading(false);
-      }
-    };
-
-    initializeFirebase();
-  }, []);
-
-  useEffect(() => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
 
     const staffQuery = query(
-      collection(db, 'staff'),
+      collection(db, 'tenants', tenantId, 'staff'),
       where("userId", "==", userId),
       where("status", "==", "active")
     );
@@ -116,13 +74,13 @@ const Schedule: React.FC = () => {
     });
     
     return () => unsubscribe();
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   useEffect(() => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
 
     const shiftsQuery = query(
-      collection(db, 'shifts'),
+      collection(db, 'tenants', tenantId, 'schedule'),
       where("userId", "==", userId)
     );
     
@@ -134,7 +92,7 @@ const Schedule: React.FC = () => {
     });
     
     return () => unsubscribe();
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   const handleSaveShift = async (shiftData: ShiftCreationData) => {
     if (!db || !userId) return;
@@ -167,7 +125,7 @@ const Schedule: React.FC = () => {
               createdAt: new Date().toISOString()
             };
             
-            promises.push(setDoc(doc(db, 'shifts', shiftRecord.id), shiftRecord));
+            promises.push(setDoc(doc(db, 'tenants', tenantId, 'schedule', shiftRecord.id), shiftRecord));
           }
         }
       }
@@ -184,7 +142,7 @@ const Schedule: React.FC = () => {
     
     try {
       const shiftsQuery = query(
-        collection(db, 'shifts'),
+        collection(db, 'tenants', tenantId, 'schedule'),
         where("userId", "==", userId)
       );
       
@@ -211,7 +169,7 @@ const Schedule: React.FC = () => {
       });
       
       const deletePromises = shiftsToDelete.map(shiftId => 
-        deleteDoc(doc(db, 'shifts', shiftId))
+        deleteDoc(doc(db, 'tenants', tenantId, 'schedule', shiftId))
       );
       
       await Promise.all(deletePromises);

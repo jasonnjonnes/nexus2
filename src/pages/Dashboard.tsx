@@ -152,7 +152,7 @@ const Dashboard: React.FC = () => {
   );
 
   // Firebase state
-  const { user } = useFirebaseAuth();
+  const { user, tenantId } = useFirebaseAuth();
   const userId = user?.uid || null;
   const [isLoading, setIsLoading] = useState(true);
 
@@ -189,13 +189,13 @@ const Dashboard: React.FC = () => {
 
   // Load data from Firebase
   useEffect(() => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
 
     const unsubscribes: Unsubscribe[] = [];
 
     // Load jobs
     const jobsQuery = query(
-      collection(db, 'jobs'),
+      collection(db, 'tenants', tenantId, 'jobs'),
       where("userId", "==", userId),
       orderBy("createdAt", "desc")
     );
@@ -209,7 +209,7 @@ const Dashboard: React.FC = () => {
 
     // Load invoices
     const invoicesQuery = query(
-      collection(db, 'invoices'),
+      collection(db, 'tenants', tenantId, 'invoices'),
       where("userId", "==", userId)
     );
     unsubscribes.push(onSnapshot(invoicesQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
@@ -222,7 +222,7 @@ const Dashboard: React.FC = () => {
 
     // Load estimates
     const estimatesQuery = query(
-      collection(db, 'estimates'),
+      collection(db, 'tenants', tenantId, 'estimates'),
       where("userId", "==", userId)
     );
     unsubscribes.push(onSnapshot(estimatesQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
@@ -235,7 +235,7 @@ const Dashboard: React.FC = () => {
 
     // Load customers
     const customersQuery = query(
-      collection(db, 'customers'),
+      collection(db, 'tenants', tenantId, 'customers'),
       where("userId", "==", userId)
     );
     unsubscribes.push(onSnapshot(customersQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
@@ -248,7 +248,7 @@ const Dashboard: React.FC = () => {
 
     // Load business units
     const businessUnitsQuery = query(
-      collection(db, 'businessUnits'),
+      collection(db, 'tenants', tenantId, 'businessUnits'),
       where("userId", "==", userId)
     );
     unsubscribes.push(onSnapshot(businessUnitsQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
@@ -261,7 +261,7 @@ const Dashboard: React.FC = () => {
 
     // Load technicians from the staff collection (filtered by staffType = "technician")
     const staffQuery = query(
-      collection(db, 'staff'),
+      collection(db, 'tenants', tenantId, 'staff'),
       where("userId", "==", userId),
       where("staffType", "==", "technician")
     );
@@ -277,7 +277,7 @@ const Dashboard: React.FC = () => {
     return () => {
       unsubscribes.forEach(unsubscribe => unsubscribe());
     };
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   // Get date range for filtering
   const getDateRange = (): DateRange => {

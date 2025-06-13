@@ -51,11 +51,13 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const location = useLocation();
 
   useEffect(() => {
+    console.log('onAuthStateChanged useEffect running');
     const unsub = onAuthStateChanged(auth, async (u) => {
+      console.log('onAuthStateChanged callback triggered', u ? u.email : 'no user');
       setUser(u);
       if (u) {
         try {
-          const tokenRes = await u.getIdTokenResult(); // do not force refresh
+          const tokenRes = await u.getIdTokenResult();
           setTenantId((tokenRes.claims as any).tenantId ?? null);
           setRole((tokenRes.claims as any).role ?? null);
           console.log('User signed in:', u.email, 'Claims:', tokenRes.claims);
@@ -73,7 +75,10 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
       setLoading(false);
     });
-    return () => unsub();
+    return () => {
+      console.log('onAuthStateChanged useEffect unsubscribing');
+      unsub();
+    };
   }, [navigate]);
 
   const wrap = async (fn: () => Promise<any>) => {
@@ -89,18 +94,56 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const login = (email: string, password: string) => wrap(() => signInWithEmailAndPassword(auth, email, password));
-  const register = (email: string, password: string) => wrap(() => createUserWithEmailAndPassword(auth, email, password));
+  const login = async (email: string, password: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      // Force token refresh to get latest custom claims
+      await cred.user.getIdToken(true);
+      // Optionally, reload user to ensure claims are up to date
+      await cred.user.reload();
+      setUser(cred.user);
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const register = async (email: string, password: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      // Force token refresh to get latest custom claims
+      await cred.user.getIdToken(true);
+      await cred.user.reload();
+      setUser(cred.user);
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = () => wrap(() => signOut(auth));
 
   const signInWithGoogle = async () => {
-    setError(null);
     setLoading(true);
+    setError(null);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const cred = await signInWithPopup(auth, provider);
+      // Force token refresh to get latest custom claims
+      await cred.user.getIdToken(true);
+      await cred.user.reload();
+      setUser(cred.user);
     } catch (err: any) {
       setError(err.message);
+      throw err;
     } finally {
       setLoading(false);
     }

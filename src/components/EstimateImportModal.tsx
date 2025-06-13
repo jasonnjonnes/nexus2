@@ -2,12 +2,15 @@ import React, { useState } from 'react';
 import { Dialog } from '@headlessui/react';
 import { X } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { getFirestore, collection, doc, getDoc, setDoc, updateDoc, arrayUnion, query, where, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, updateDoc, arrayUnion, query, where, getDocs, writeBatch } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface EstimateImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onComplete?: () => void;
+  userId?: string;
+  tenantId?: string;
 }
 
 const FIELD_MAP: { [key: string]: string } = {
@@ -37,7 +40,7 @@ const FIELD_MAP: { [key: string]: string } = {
   'Estimates Equipment Costs': 'equipmentCosts',
 };
 
-const EstimateImportModal: React.FC<EstimateImportModalProps> = ({ isOpen, onClose, onComplete }) => {
+const EstimateImportModal: React.FC<EstimateImportModalProps> = ({ isOpen, onClose, onComplete, userId, tenantId }) => {
   const [step, setStep] = useState<'upload' | 'preview' | 'importing' | 'done'>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [rows, setRows] = useState<any[]>([]);
@@ -46,7 +49,7 @@ const EstimateImportModal: React.FC<EstimateImportModalProps> = ({ isOpen, onClo
   const [successCount, setSuccessCount] = useState(0);
   const [failCount, setFailCount] = useState(0);
   const [currentImportIndex, setCurrentImportIndex] = useState(0);
-  const db = getFirestore();
+
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -62,6 +65,10 @@ const EstimateImportModal: React.FC<EstimateImportModalProps> = ({ isOpen, onClo
   };
 
   const handleImport = async () => {
+    if (!tenantId) {
+      setErrors(prev => [...prev, 'Error: tenantId is missing. Please reload and try again.']);
+      return;
+    }
     setStep('importing');
     setErrors([]);
     setCurrentImportIndex(0);
@@ -151,11 +158,11 @@ const EstimateImportModal: React.FC<EstimateImportModalProps> = ({ isOpen, onClo
                 }
               }
 
-              // Add estimate to batch
-              batch.set(doc(db, 'estimates', estimateId), estimate, { merge: true });
+              // Add estimate to batch using tenant-scoped collection
+              batch.set(doc(db, 'tenants', tenantId!, 'estimates', estimateId), estimate, { merge: true });
 
               // Update customer document to include estimate reference
-              const customerRef = doc(db, 'customers', customerId);
+              const customerRef = doc(db, 'tenants', tenantId!, 'customers', customerId);
               const customerSnap = await getDoc(customerRef);
               if (customerSnap.exists()) {
                 const customerData = customerSnap.data();
@@ -243,7 +250,12 @@ const EstimateImportModal: React.FC<EstimateImportModalProps> = ({ isOpen, onClo
               </table>
               {rows.length > 10 && <div className="text-xs text-gray-500 mt-2">Showing first 10 rows of {rows.length} total</div>}
             </div>
-            <button onClick={handleImport} className="px-4 py-2 bg-blue-600 text-white rounded">Import</button>
+            {(!tenantId || !userId) && (
+              <div className="mb-2 text-red-600 dark:text-red-400 font-semibold">
+                Error: User or tenant not ready yet. Please wait, then try again.
+              </div>
+            )}
+            <button onClick={handleImport} className="px-4 py-2 bg-blue-600 text-white rounded" disabled={!tenantId || !userId}>Import</button>
             <button onClick={onClose} className="ml-2 px-4 py-2 border rounded">Cancel</button>
           </div>
         )}

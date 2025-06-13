@@ -27,6 +27,8 @@ import { GLAccount } from '../types/pricebook';
 import EquipmentForm, { EquipmentFormState } from '../components/EquipmentForm';
 import { Menu } from '@headlessui/react';
 import CustomerImportModal from '../components/CustomerImportModal';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import { db } from '../firebase';
 
 // Declare firebase config if it's coming from an external script
 declare const __firebase_config: any;
@@ -119,8 +121,6 @@ const Pricebook: React.FC = () => {
   const servicePhotoInputRef = useRef<HTMLInputElement>(null);
   const materialPhotoInputRef = useRef<HTMLInputElement>(null);
 
-  const [db] = useState<Firestore | null>(sharedDb);
-  const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -319,14 +319,18 @@ const Pricebook: React.FC = () => {
 
   const [showCustomerImport, setShowCustomerImport] = useState(false);
 
+  // Use auth context instead of direct Firebase
+  const { user, tenantId } = useFirebaseAuth();
+  const userId = user?.uid;
+
   const fetchEquipment = useCallback(() => {
-    if (!db || !userId) {
-      console.error('Cannot fetch equipment: db or userId is missing', { db: !!db, userId: !!userId });
+    if (!db || !userId || !tenantId) {
+      console.error('Cannot fetch equipment: db, userId, or tenantId is missing', { db: !!db, userId: !!userId, tenantId });
       return () => {};
     }
     try {
       console.log('Setting up equipment listener...');
-      const equipmentRef = collection(db, 'equipment');
+      const equipmentRef = collection(db, 'tenants', tenantId, 'equipment');
       const q = query(equipmentRef, where('userId', '==', userId));
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const equipmentData = snapshot.docs.map(doc => {
@@ -393,40 +397,27 @@ const Pricebook: React.FC = () => {
       setError('Failed to load equipment');
       return () => {};
     }
-  }, [db, userId]);
-
-  // Authenticate listener – redirects to /login if signed-out
-  useEffect(() => {
-    const unsub = onAuthStateChanged(sharedAuth, (user) => {
-      if (user) {
-        setUserId(user.uid);
-        setIsLoading(false);
-      } else {
-        window.location.href = '/login';
-      }
-    });
-    return () => unsub();
-  }, []);
+  }, [db, userId, tenantId]);
 
   useEffect(() => {
-    if (db && userId) {
-      const ref = collection(db, 'glAccounts');
+    if (db && userId && tenantId) {
+      const ref = collection(db, 'tenants', tenantId, 'glAccounts');
       const unsub = onSnapshot(ref, snap => {
         const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GLAccount[];
         setGlAccounts(data);
       });
       return () => unsub();
     }
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   const fetchCategories = useCallback(() => {
-    if (!db || !userId) {
-      console.error('Cannot fetch categories: db or userId is missing', { db: !!db, userId: !!userId });
+    if (!db || !userId || !tenantId) {
+      console.error('Cannot fetch categories: db, userId, or tenantId is missing', { db: !!db, userId: !!userId, tenantId });
       return () => {};
     }
     try {
       console.log('Setting up categories listener...');
-      const categoriesRef = collection(db, 'categories');
+      const categoriesRef = collection(db, 'tenants', tenantId, 'categories');
       const q = query(categoriesRef, where('userId', '==', userId));
       
       const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -454,16 +445,16 @@ const Pricebook: React.FC = () => {
       setError('Failed to load categories');
       return () => {};
     }
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   const fetchServices = useCallback(() => {
-    if (!db || !userId) {
-      console.error('Cannot fetch services: db or userId is missing', { db: !!db, userId: !!userId });
+    if (!db || !userId || !tenantId) {
+      console.error('Cannot fetch services: db, userId, or tenantId is missing', { db: !!db, userId: !!userId, tenantId });
       return () => {};
     }
     try {
       console.log('Setting up services listener...');
-      const servicesRef = collection(db, 'services');
+      const servicesRef = collection(db, 'tenants', tenantId, 'services');
       const q = query(servicesRef, where('userId', '==', userId));
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const servicesData = snapshot.docs.map(doc => {
@@ -486,16 +477,16 @@ const Pricebook: React.FC = () => {
       setError('Failed to load services');
       return () => {};
     }
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   const fetchMaterials = useCallback(() => {
-    if (!db || !userId) {
-      console.error('Cannot fetch materials: db or userId is missing', { db: !!db, userId: !!userId });
+    if (!db || !userId || !tenantId) {
+      console.error('Cannot fetch materials: db, userId, or tenantId is missing', { db: !!db, userId: !!userId, tenantId });
       return () => {};
     }
     try {
       console.log('Setting up materials listener...');
-      const materialsRef = collection(db, 'materials');
+      const materialsRef = collection(db, 'tenants', tenantId, 'materials');
       const q = query(materialsRef, where('userId', '==', userId));
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const materialsData = snapshot.docs.map(doc => {
@@ -518,12 +509,12 @@ const Pricebook: React.FC = () => {
       setError('Failed to load materials');
       return () => {};
     }
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   const fetchPriceRules = async () => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
     try {
-      const q = query(collection(db, 'priceRules'), where('userId', '==', userId));
+      const q = query(collection(db, 'tenants', tenantId, 'priceRules'), where('userId', '==', userId));
       const querySnapshot = await getDocs(q);
       const rules = querySnapshot.docs.map(doc => ({
         ...doc.data(),
@@ -538,7 +529,7 @@ const Pricebook: React.FC = () => {
   };
 
   useEffect(() => {
-    if (db && userId) {
+    if (db && userId && tenantId) {
       setIsLoading(true);
       try {
         console.log('Setting up data listeners...');
@@ -564,9 +555,9 @@ const Pricebook: React.FC = () => {
         setIsLoading(false);
       }
     } else {
-      console.error('Cannot set up data listeners: db or userId is missing', { db: !!db, userId: !!userId });
+      console.error('Cannot set up data listeners: db, userId, or tenantId is missing', { db: !!db, userId: !!userId, tenantId });
     }
-  }, [db, userId, fetchCategories, fetchServices, fetchMaterials, fetchEquipment]);
+  }, [db, userId, tenantId, fetchCategories, fetchServices, fetchMaterials, fetchEquipment]);
 
   const handleAddService = () => {
     setServiceForm(initialServiceForm);
@@ -585,11 +576,11 @@ const Pricebook: React.FC = () => {
   };
 
   const handleUpdateService = async () => {
-    if (!db || !editingService) return;
+    if (!db || !editingService || !tenantId) return;
     setServiceSaving(true);
     setServiceError(null);
     try {
-      const serviceRef = doc(db, 'services', editingService.id);
+      const serviceRef = doc(db, 'tenants', tenantId, 'services', editingService.id);
       await updateDoc(serviceRef, {
         ...serviceForm,
         categories: Array.isArray(serviceForm.categories) ? serviceForm.categories.map(String) : [],
@@ -607,11 +598,11 @@ const Pricebook: React.FC = () => {
   };
 
   const handleAddMaterial = async () => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
     setMaterialSaving(true);
     setMaterialError(null);
     try {
-      await addDoc(collection(db, 'materials'), {
+      await addDoc(collection(db, 'tenants', tenantId, 'materials'), {
         ...materialForm,
         categories: Array.isArray(materialForm.categories) ? materialForm.categories.map(String) : [],
         code: generateMaterialCode(),
@@ -630,11 +621,11 @@ const Pricebook: React.FC = () => {
   };
 
   const handleUpdateMaterial = async () => {
-    if (!db || !editingMaterial) return;
+    if (!db || !editingMaterial || !tenantId) return;
     setMaterialSaving(true);
     setMaterialError(null);
     try {
-      const materialRef = doc(db, 'materials', editingMaterial.id);
+      const materialRef = doc(db, 'tenants', tenantId, 'materials', editingMaterial.id);
       await updateDoc(materialRef, {
         ...materialForm,
         categories: Array.isArray(materialForm.categories) ? materialForm.categories.map(String) : [],
@@ -685,7 +676,7 @@ const Pricebook: React.FC = () => {
       console.log('Categories to import:', categoryItems.slice(0, 3));
       categoryItems.forEach(item => {
         try {
-          const docId = item['Category ID'] || doc(collection(db, 'categories')).id;
+                      const docId = item['Category ID'] || doc(collection(db, 'tenants', tenantId, 'categories')).id;
           const docData: any = { userId };
           Object.keys(item).forEach(key => {
             if (key !== '_sheet' && key !== '_row') {
@@ -704,7 +695,7 @@ const Pricebook: React.FC = () => {
       console.log('Services to import:', serviceItems.slice(0, 3));
       serviceItems.forEach(item => {
         try {
-          const docId = item['serviceTitanId'] || doc(collection(db, 'services')).id;
+                      const docId = item['serviceTitanId'] || doc(collection(db, 'tenants', tenantId, 'services')).id;
           const docData: any = { userId };
           Object.keys(item).forEach(key => {
             if (key !== '_sheet' && key !== '_row') {
@@ -723,7 +714,7 @@ const Pricebook: React.FC = () => {
       console.log('Materials to import:', materialItems.slice(0, 3));
       materialItems.forEach(item => {
         try {
-          const docId = item['serviceTitanId'] || doc(collection(db, 'materials')).id;
+                      const docId = item['serviceTitanId'] || doc(collection(db, 'tenants', tenantId, 'materials')).id;
           const docData: any = { userId };
           Object.keys(item).forEach(key => {
             if (key !== '_sheet' && key !== '_row') {
@@ -743,7 +734,10 @@ const Pricebook: React.FC = () => {
         const batch = writeBatch(db);
         const batchWrites = writes.slice(i * BATCH_LIMIT, (i + 1) * BATCH_LIMIT);
         batchWrites.forEach(({ collection, docId, docData }) => {
-          const docRef = doc(db, collection, docId);
+          // Check if collection already contains the full path
+          const docRef = collection.includes('tenants/') 
+            ? doc(db, collection, docId)
+            : doc(db, 'tenants', tenantId, collection, docId);
           batch.set(docRef, docData);
         });
         try {
@@ -780,7 +774,7 @@ const Pricebook: React.FC = () => {
     }
 
     try {
-      await restorePricebookData(db, userId);
+      await restorePricebookData(db, userId, tenantId);
       alert('Pricebook data restored successfully!');
     } catch (error) {
       console.error('Error restoring pricebook data:', error);
@@ -861,7 +855,7 @@ const Pricebook: React.FC = () => {
         const batchIds = selectedServiceIds.slice(i * BATCH_LIMIT, (i + 1) * BATCH_LIMIT);
         batchIds.forEach(id => {
           console.log('Bulk delete doc id:', id, 'type:', typeof id);
-          const docRef = doc(db, 'services', String(id));
+          const docRef = doc(db, 'tenants', tenantId, 'services', String(id));
           batch.delete(docRef);
         });
         await batch.commit();
@@ -905,7 +899,7 @@ const Pricebook: React.FC = () => {
         const batch = writeBatch(db);
         const batchIds = selectedMaterialIds.slice(i * BATCH_LIMIT, (i + 1) * BATCH_LIMIT);
         batchIds.forEach(id => {
-          const docRef = doc(db, 'materials', String(id));
+          const docRef = doc(db, 'tenants', tenantId, 'materials', String(id));
           batch.delete(docRef);
         });
         await batch.commit();
@@ -926,7 +920,7 @@ const Pricebook: React.FC = () => {
     if (!db || !userId) return;
 
     try {
-      const categoryRef = await addDoc(collection(db, 'categories'), {
+      const categoryRef = await addDoc(collection(db, 'tenants', tenantId, 'categories'), {
         ...formData,
         userId,
         createdAt: serverTimestamp(),
@@ -935,7 +929,7 @@ const Pricebook: React.FC = () => {
 
       // Update any services/materials that should be in this category
       if (formData.type === 'service') {
-        const servicesRef = collection(db, 'services');
+        const servicesRef = collection(db, 'tenants', tenantId, 'services');
         const q = query(servicesRef, where('userId', '==', userId));
         const servicesSnapshot = await getDocs(q);
         
@@ -951,7 +945,7 @@ const Pricebook: React.FC = () => {
         });
         await batch.commit();
       } else if (formData.type === 'material') {
-        const materialsRef = collection(db, 'materials');
+        const materialsRef = collection(db, 'tenants', tenantId, 'materials');
         const q = query(materialsRef, where('userId', '==', userId));
         const materialsSnapshot = await getDocs(q);
         
@@ -977,7 +971,7 @@ const Pricebook: React.FC = () => {
     if (!db || !userId || !editingCategory) return;
 
     try {
-      const categoryRef = doc(db, 'categories', editingCategory.id);
+      const categoryRef = doc(db, 'tenants', tenantId, 'categories', editingCategory.id);
       await updateDoc(categoryRef, {
         ...formData,
         updatedAt: serverTimestamp(),
@@ -1000,7 +994,7 @@ const Pricebook: React.FC = () => {
       const batch = writeBatch(db);
       
       // Update services
-      const servicesRef = collection(db, 'services');
+      const servicesRef = collection(db, 'tenants', tenantId, 'services');
       const servicesQuery = query(servicesRef, where('userId', '==', userId));
       const servicesSnapshot = await getDocs(servicesQuery);
       
@@ -1015,7 +1009,7 @@ const Pricebook: React.FC = () => {
       });
 
       // Update materials
-      const materialsRef = collection(db, 'materials');
+              const materialsRef = collection(db, 'tenants', tenantId, 'materials');
       const materialsQuery = query(materialsRef, where('userId', '==', userId));
       const materialsSnapshot = await getDocs(materialsQuery);
       
@@ -1030,7 +1024,7 @@ const Pricebook: React.FC = () => {
       });
 
       // Delete the category
-      batch.delete(doc(db, 'categories', category.id));
+              batch.delete(doc(db, 'tenants', tenantId, 'categories', category.id));
       
       await batch.commit();
     } catch (error) {
@@ -1085,7 +1079,7 @@ const Pricebook: React.FC = () => {
   const handleAddPriceRule = async (formData: PriceRuleForm) => {
     if (!db || !userId) return;
     try {
-      await addDoc(collection(db, 'priceRules'), {
+      await addDoc(collection(db, 'tenants', tenantId, 'priceRules'), {
         ...formData,
         userId,
         createdAt: serverTimestamp(),
@@ -1129,7 +1123,7 @@ const Pricebook: React.FC = () => {
       const batch = writeBatch(db);
       
       // Update categories
-      const categoriesRef = collection(db, 'categories');
+              const categoriesRef = collection(db, 'tenants', tenantId, 'categories');
       const categoriesQuery = query(categoriesRef, where('userId', '==', userId));
       const categoriesSnapshot = await getDocs(categoriesQuery);
       
@@ -1160,7 +1154,7 @@ const Pricebook: React.FC = () => {
     if (!db || !userId) return;
     if (!window.confirm('Are you sure you want to delete this service?')) return;
     try {
-      await deleteDoc(doc(db, 'services', String(serviceId)));
+      await deleteDoc(doc(db, 'tenants', tenantId, 'services', String(serviceId)));
       await fetchServices(); // Refresh list
     } catch (error) {
       console.error('Error deleting service:', error);
@@ -1171,7 +1165,7 @@ const Pricebook: React.FC = () => {
     if (!db || !userId) return;
     if (!window.confirm('Are you sure you want to delete this material?')) return;
     try {
-      await deleteDoc(doc(db, 'materials', String(materialId)));
+      await deleteDoc(doc(db, 'tenants', tenantId, 'materials', String(materialId)));
       await fetchMaterials(); // Refresh list
     } catch (error) {
       console.error('Error deleting material:', error);
@@ -1205,11 +1199,11 @@ const Pricebook: React.FC = () => {
 
   // Implement handleSaveService for Add Service modal
   const handleSaveService = async () => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
     setServiceSaving(true);
     setServiceError(null);
     try {
-      await addDoc(collection(db, 'services'), {
+      await addDoc(collection(db, 'tenants', tenantId, 'services'), {
         ...serviceForm,
         categoryID: Array.isArray(serviceForm.categories) && serviceForm.categories.length > 0 ? serviceForm.categories[0] : '',
         categories: undefined, // Remove categories array for services
@@ -1258,7 +1252,7 @@ const Pricebook: React.FC = () => {
         const batch = writeBatch(db);
         const batchIds = selectedCategoryIds.slice(i * BATCH_LIMIT, (i + 1) * BATCH_LIMIT);
         batchIds.forEach(id => {
-          const docRef = doc(db, 'categories', String(id));
+          const docRef = doc(db, 'tenants', tenantId, 'categories', String(id));
           batch.delete(docRef);
         });
         await batch.commit();
@@ -1291,7 +1285,7 @@ const Pricebook: React.FC = () => {
         const batch = writeBatch(db);
         const batchIds = selectedEquipmentIds.slice(i * BATCH_LIMIT, (i + 1) * BATCH_LIMIT);
         batchIds.forEach(id => {
-          const docRef = doc(db, 'equipment', String(id));
+          const docRef = doc(db, 'tenants', tenantId, 'equipment', String(id));
           batch.delete(docRef);
         });
         await batch.commit();
@@ -1308,9 +1302,65 @@ const Pricebook: React.FC = () => {
     }
   };
 
+  const handleAddEquipment = async () => {
+    if (!db || !userId || !tenantId) return;
+    setEquipmentSaving(true);
+    setEquipmentError(null);
+    try {
+      await addDoc(collection(db, 'tenants', tenantId, 'equipment'), {
+        ...equipmentForm,
+        userId,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setShowAddEquipmentModal(false);
+      setEquipmentForm(initialEquipmentFormState);
+      await fetchEquipment();
+    } catch (error) {
+      console.error('Error adding equipment:', error);
+      setEquipmentError('Failed to add equipment. Please try again.');
+    } finally {
+      setEquipmentSaving(false);
+    }
+  };
+
+  const handleUpdateEquipment = async () => {
+    if (!db || !editingEquipment || !tenantId) return;
+    setEquipmentSaving(true);
+    setEquipmentError(null);
+    try {
+      const equipmentRef = doc(db, 'tenants', tenantId, 'equipment', editingEquipment.code);
+      await updateDoc(equipmentRef, {
+        ...equipmentForm,
+        updatedAt: serverTimestamp(),
+      });
+      setShowEditEquipmentModal(false);
+      setEditingEquipment(null);
+      setEquipmentForm(initialEquipmentFormState);
+      await fetchEquipment();
+    } catch (error) {
+      console.error('Error updating equipment:', error);
+      setEquipmentError('Failed to update equipment. Please try again.');
+    } finally {
+      setEquipmentSaving(false);
+    }
+  };
+
+  const handleDeleteEquipment = async (equipmentCode: string) => {
+    if (!db || !tenantId) return;
+    if (!window.confirm('Are you sure you want to delete this equipment?')) return;
+    try {
+      await deleteDoc(doc(db, 'tenants', tenantId, 'equipment', String(equipmentCode)));
+      await fetchEquipment();
+    } catch (error) {
+      console.error('Error deleting equipment:', error);
+      setError('Failed to delete equipment.');
+    }
+  };
+
   const handleDeactivateService = async (service: Service) => {
     if (!db) return;
-    await updateDoc(doc(db, 'services', service.id), { active: false, updatedAt: serverTimestamp() });
+    await updateDoc(doc(db, 'tenants', tenantId, 'services', service.id), { active: false, updatedAt: serverTimestamp() });
     await fetchServices();
   };
 
@@ -1595,7 +1645,7 @@ const Pricebook: React.FC = () => {
                                           count++;
                                           newCode = `${baseCode} (${count})`;
                                         }
-                                        await addDoc(collection(db, 'services'), {
+                                        await addDoc(collection(db, 'tenants', tenantId, 'services'), {
                                           ...service,
                                           code: newCode,
                                           active: true,
@@ -1722,7 +1772,7 @@ const Pricebook: React.FC = () => {
                           // Get CategoryType from the original row (not just the first 11 columns)
                           const typeRaw = categoryTypeIndex !== -1 ? rows[idx][categoryTypeIndex] : '';
                           const type = String(typeRaw).trim().toLowerCase() === 'materials' ? 'material' : 'service';
-                          const docRef = doc(db, 'categories', String(cat.id));
+                          const docRef = doc(db, 'tenants', tenantId, 'categories', String(cat.id));
                           batch.set(docRef, {
                             id: cat.id,
                             name: cat.name,
@@ -1789,7 +1839,7 @@ const Pricebook: React.FC = () => {
                           const typeRaw = row[typeIndex] || '';
                           const type = String(typeRaw).trim().toLowerCase() === 'materials' ? 'material' : 'service';
                           if (id) {
-                            const docRef = doc(db, 'categories', id);
+                            const docRef = doc(db, 'tenants', tenantId, 'categories', id);
                             batch.update(docRef, { type });
                           }
                         });
@@ -1901,7 +1951,7 @@ const Pricebook: React.FC = () => {
                           const newAccountNumber = `${prefix}${newNum}`;
                           // Create in Firestore
                           if (!db) throw new Error('Database not initialized');
-                          const docRef = doc(collection(db, 'glAccounts'));
+                          const docRef = doc(collection(db, 'tenants', tenantId, 'glAccounts'));
                           await setDoc(docRef, {
                             accountNumber: newAccountNumber,
                             accountName,
@@ -1930,14 +1980,16 @@ const Pricebook: React.FC = () => {
                         for (const chunk of serviceChunks) {
                           const batch = writeBatch(db);
                           for (const item of chunk) {
-                            const docId = item['serviceTitanId'] || doc(collection(db, 'services')).id;
-                            const docRef = doc(db, 'services', docId);
+                            const docId = item['id'] || doc(collection(db, 'tenants', tenantId, 'services')).id;
+                            const docRef = doc(db, 'tenants', tenantId, 'services', docId);
                             // Revenue/Expense account logic
                             let generalLedgerAccount = item.generalLedgerAccount || '';
                             let expenseAccount = item.expenseAccount || '';
                             if (generalLedgerAccount) generalLedgerAccount = await getOrCreateGLAccount(generalLedgerAccount, 'Revenue');
                             if (expenseAccount) expenseAccount = await getOrCreateGLAccount(expenseAccount, 'Expense');
-                            batch.set(docRef, { ...item, userId, generalLedgerAccount, expenseAccount });
+                            // Ensure categories are strings
+                            const categories = Array.isArray(item.categories) ? item.categories.map(String) : [];
+                            batch.set(docRef, { ...item, userId, categories, generalLedgerAccount, expenseAccount });
                           }
                           await batch.commit();
                         }
@@ -1945,8 +1997,8 @@ const Pricebook: React.FC = () => {
                         for (const chunk of materialChunks) {
                           const batch = writeBatch(db);
                           for (const item of chunk) {
-                            const docId = item['serviceTitanId'] || doc(collection(db, 'materials')).id;
-                            const docRef = doc(db, 'materials', docId);
+                            const docId = item['id'] || doc(collection(db, 'tenants', tenantId, 'materials')).id;
+                            const docRef = doc(db, 'tenants', tenantId, 'materials', docId);
                             // Revenue/Expense account logic
                             let generalLedgerAccount = item.generalLedgerAccount || '';
                             let expenseAccount = item.expenseAccount || '';
@@ -1961,14 +2013,16 @@ const Pricebook: React.FC = () => {
                         for (const chunk of equipmentChunks) {
                           const batch = writeBatch(db);
                           for (const item of chunk) {
-                            const docId = item['serviceTitanId'] || doc(collection(db, 'equipment')).id;
-                            const docRef = doc(db, 'equipment', docId);
+                            const docId = item['id'] || doc(collection(db, 'tenants', tenantId, 'equipment')).id;
+                            const docRef = doc(db, 'tenants', tenantId, 'equipment', docId);
                             // Revenue/Expense account logic
                             let generalLedgerAccount = item.generalLedgerAccount || '';
                             let expenseAccount = item.expenseAccount || '';
                             if (generalLedgerAccount) generalLedgerAccount = await getOrCreateGLAccount(generalLedgerAccount, 'Revenue');
                             if (expenseAccount) expenseAccount = await getOrCreateGLAccount(expenseAccount, 'Expense');
-                            batch.set(docRef, { ...item, userId, generalLedgerAccount, expenseAccount });
+                            // Ensure categories are strings
+                            const categories = Array.isArray(item.categories) ? item.categories.map(String) : [];
+                            batch.set(docRef, { ...item, userId, categories, generalLedgerAccount, expenseAccount });
                           }
                           await batch.commit();
                         }
@@ -2362,7 +2416,7 @@ const Pricebook: React.FC = () => {
                         onClick={async () => {
                           // Multi-deactivate
                           if (!db) return;
-                          await Promise.all(selectedMaterialIds.map(id => updateDoc(doc(db, 'materials', id), { active: false, updatedAt: serverTimestamp() })));
+                          await Promise.all(selectedMaterialIds.map(id => updateDoc(doc(db, 'tenants', tenantId, 'materials', id), { active: false, updatedAt: serverTimestamp() })));
                           setSelectedMaterialIds([]);
                           setSelectAllMaterials(false);
                           await fetchMaterials();
@@ -2389,7 +2443,7 @@ const Pricebook: React.FC = () => {
                               count++;
                               newCode = `${baseCode} (${count})`;
                             }
-                            await addDoc(collection(db, 'materials'), {
+                            await addDoc(collection(db, 'tenants', tenantId, 'materials'), {
                               ...orig,
                               code: newCode,
                               active: true,
@@ -2567,7 +2621,7 @@ const Pricebook: React.FC = () => {
                           >
                             <Edit size={16} />
                           </button>
-                          <button className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300" onClick={() => {/* handleDeleteEquipment(eq.code) */}}>
+                          <button className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300" onClick={() => handleDeleteEquipment(eq.code)}>
                             <Trash2 size={16} />
                           </button>
                         </td>
@@ -2587,7 +2641,7 @@ const Pricebook: React.FC = () => {
                   formData={equipmentForm}
                   onChange={(field, value) => setEquipmentForm(prev => ({ ...prev, [field]: value }))}
                   categories={equipmentCategories}
-                  onSubmit={e => { e.preventDefault(); /* handleAddEquipment() */ setShowAddEquipmentModal(false); }}
+                  onSubmit={e => { e.preventDefault(); handleAddEquipment(); }}
                   materials={[]}
                   onCancel={() => setShowAddEquipmentModal(false)}
                   isSubmitting={false}
@@ -2607,7 +2661,7 @@ const Pricebook: React.FC = () => {
                   formData={equipmentForm}
                   onChange={(field, value) => setEquipmentForm(prev => ({ ...prev, [field]: value }))}
                   categories={equipmentCategories}
-                  onSubmit={e => { e.preventDefault(); /* handleEditEquipment() */ setShowEditEquipmentModal(false); }}
+                  onSubmit={e => { e.preventDefault(); handleUpdateEquipment(); }}
                   materials={[]}
                   onCancel={() => setShowEditEquipmentModal(false)}
                   isSubmitting={false}
@@ -2704,27 +2758,142 @@ const Pricebook: React.FC = () => {
             if (!db) return;
             setIsLoading(true);
             let success = 0, fail = 0;
-            for (const row of data) {
+            const errors: string[] = [];
+            
+            console.log('\n=== SERVICE-MATERIAL LINK IMPORT START ===');
+            console.log('Total rows to process:', data.length);
+            console.log('Raw import data:', JSON.stringify(data, null, 2));
+            console.log('Current tenantId:', tenantId);
+            console.log('Database instance:', db ? 'Available' : 'Not available');
+            console.log('Available services count:', services.length);
+            console.log('Available materials count:', materials.length);
+            console.log('Sample services:', services.slice(0, 3).map(s => ({ id: s.id, code: s.code, name: s.name })));
+            console.log('Sample materials:', materials.slice(0, 3).map(m => ({ id: m.id, code: m.code, name: m.name })));
+            
+            for (let i = 0; i < data.length; i++) {
+              const row = data[i];
+              console.log(`\n--- Processing Service-Material Link Row ${i + 1}/${data.length} ---`);
+              console.log('Row data:', JSON.stringify(row, null, 2));
+              
               try {
-                const ref = doc(db, 'services', String(row.serviceId));
+                // Validate serviceId
+                if (!row.serviceId) {
+                  const error = `❌ FAIL: Missing serviceId in row: ${JSON.stringify(row)}`;
+                  console.error(error);
+                  errors.push(error);
+                  fail++;
+                  continue;
+                }
+                
+                // Validate materialId
+                if (!row.materialId) {
+                  const error = `❌ FAIL: Missing materialId in row: ${JSON.stringify(row)}`;
+                  console.error(error);
+                  errors.push(error);
+                  fail++;
+                  continue;
+                }
+                
+                console.log(`🔍 Looking for service with ID: "${row.serviceId}" (type: ${typeof row.serviceId})`);
+                
+                // Check if service exists in memory first
+                const serviceInMemory = services.find(s => s.id === String(row.serviceId));
+                console.log('Service found in memory:', serviceInMemory ? { id: serviceInMemory.id, code: serviceInMemory.code, name: serviceInMemory.name } : 'Not found');
+                
+                // Check if material exists in memory
+                const materialInMemory = materials.find(m => m.id === String(row.materialId));
+                console.log('Material found in memory:', materialInMemory ? { id: materialInMemory.id, code: materialInMemory.code, name: materialInMemory.name } : 'Not found');
+                
+                const serviceDocPath = `tenants/${tenantId}/services/${String(row.serviceId)}`;
+                console.log('Service document path:', serviceDocPath);
+                
+                const ref = doc(db, 'tenants', tenantId, 'services', String(row.serviceId));
+                console.log('Service document reference created');
+                
                 const snap = await getDoc(ref);
-                if (!snap.exists()) { fail++; continue; }
+                console.log('Service document fetch result - exists:', snap.exists());
+                
+                if (!snap.exists()) { 
+                  const error = `❌ FAIL: Service not found with ID: "${row.serviceId}"`;
+                  console.error(error);
+                  console.error('Available service IDs:', services.map(s => s.id));
+                  errors.push(error);
+                  fail++; 
+                  continue; 
+                }
+                
                 const svc = snap.data();
+                console.log('✅ Found service:', {
+                  id: svc.id,
+                  code: svc.code,
+                  name: svc.name,
+                  currentMaterials: svc.materials?.length || 0,
+                  currentLinkedMaterials: svc.linkedMaterials?.length || 0
+                });
+                
                 const materials = Array.isArray(svc.materials) ? [...svc.materials] : [];
                 const linkedMaterials = Array.isArray(svc.linkedMaterials) ? [...svc.linkedMaterials] : [];
-                upsertLink(materials, 'materialId', row.materialId, {
+                
+                console.log('Current service materials array:', materials);
+                console.log('Current service linkedMaterials array:', linkedMaterials);
+                
+                // Create the material link object
+                const materialLink = {
                   materialId: row.materialId,
                   materialCode: row.materialCode,
                   quantity: row.quantity,
                   active: row.active,
-                });
-                if (!linkedMaterials.includes(row.materialId)) linkedMaterials.push(row.materialId);
-                await updateDoc(ref, { materials, linkedMaterials, updatedAt: serverTimestamp() });
+                };
+                console.log('Material link to add:', materialLink);
+                
+                // Update materials array using upsertLink
+                console.log('Before upsertLink - materials array:', materials);
+                upsertLink(materials, 'materialId', row.materialId, materialLink);
+                console.log('After upsertLink - materials array:', materials);
+                
+                // Update linkedMaterials array
+                const wasAlreadyLinked = linkedMaterials.includes(row.materialId);
+                if (!wasAlreadyLinked) {
+                  linkedMaterials.push(row.materialId);
+                  console.log('✅ Added materialId to linkedMaterials array');
+                } else {
+                  console.log('ℹ️ MaterialId already in linkedMaterials array');
+                }
+                console.log('Final linkedMaterials array:', linkedMaterials);
+                
+                // Update the service document
+                console.log('🔄 Updating service document...');
+                const updateData = { materials, linkedMaterials, updatedAt: serverTimestamp() };
+                console.log('Update data:', { materials, linkedMaterials, updatedAt: 'serverTimestamp()' });
+                
+                await updateDoc(ref, updateData);
+                console.log(`✅ SUCCESS: Updated service "${row.serviceId}" with material "${row.materialId}"`);
                 success++;
-              } catch (e) { fail++; }
+                
+              } catch (e) { 
+                const error = `❌ ERROR processing row ${i + 1}: ${e}`;
+                console.error('Error linking material to service:', e);
+                console.error('Row that caused error:', row);
+                console.error('Error stack:', e.stack);
+                errors.push(`Error processing row ${JSON.stringify(row)}: ${e}`);
+                fail++; 
+              }
             }
+            
+            console.log('\n=== SERVICE-MATERIAL LINK IMPORT COMPLETE ===');
+            console.log(`Total processed: ${data.length}`);
+            console.log(`Successful: ${success}`);
+            console.log(`Failed: ${fail}`);
+            console.log('All errors:', errors);
+            console.log('==============================================\n');
+            
             setIsLoading(false);
-            alert(`Linked materials to services: ${success} succeeded, ${fail} failed.`);
+            
+            if (errors.length > 0) {
+              console.error('Service-Material Link Import Errors:', errors);
+            }
+            
+            alert(`Linked materials to services: ${success} succeeded, ${fail} failed.${errors.length > 0 ? '\nCheck console for details.' : ''}`);
             setShowImportMaterialLinks(false);
             await fetchServices();
           }}
@@ -2739,27 +2908,63 @@ const Pricebook: React.FC = () => {
             if (!db) return;
             setIsLoading(true);
             let success = 0, fail = 0;
+            const errors: string[] = [];
+            
+            console.log('Service-Equipment Link Import Data:', data);
+            
             for (const row of data) {
               try {
-                const ref = doc(db, 'services', String(row.serviceId));
+                console.log('Processing service-equipment link:', row);
+                
+                if (!row.serviceId) {
+                  errors.push(`Missing serviceId in row: ${JSON.stringify(row)}`);
+                  fail++;
+                  continue;
+                }
+                
+                if (!row.equipmentId) {
+                  errors.push(`Missing equipmentId in row: ${JSON.stringify(row)}`);
+                  fail++;
+                  continue;
+                }
+                
+                const ref = doc(db, 'tenants', tenantId, 'services', String(row.serviceId));
                 const snap = await getDoc(ref);
-                if (!snap.exists()) { fail++; continue; }
+                
+                if (!snap.exists()) { 
+                  errors.push(`Service not found: ${row.serviceId}`);
+                  fail++; 
+                  continue; 
+                }
+                
                 const svc = snap.data();
                 const equipment = Array.isArray(svc.equipment) ? [...svc.equipment] : [];
                 const linkedEquipment = Array.isArray(svc.linkedEquipment) ? [...svc.linkedEquipment] : [];
+                
                 upsertLink(equipment, 'equipmentId', row.equipmentId, {
                   equipmentId: row.equipmentId,
                   equipmentCode: row.equipmentCode,
                   quantity: row.quantity,
                   active: row.active,
                 });
+                
                 if (!linkedEquipment.includes(row.equipmentId)) linkedEquipment.push(row.equipmentId);
+                
                 await updateDoc(ref, { equipment, linkedEquipment, updatedAt: serverTimestamp() });
                 success++;
-              } catch (e) { fail++; }
+              } catch (e) { 
+                console.error('Error linking equipment to service:', e, row);
+                errors.push(`Error processing row ${JSON.stringify(row)}: ${e}`);
+                fail++; 
+              }
             }
             setIsLoading(false);
-            alert(`Linked equipment to services: ${success} succeeded, ${fail} failed.`);
+            
+            if (errors.length > 0) {
+              console.error('Service-Equipment Link Import Errors:', errors);
+            }
+            
+            alert(`Linked equipment to services: ${success} succeeded, ${fail} failed.${errors.length > 0 ? '\nCheck console for details.' : ''}`);
             setShowImportEquipmentLinks(false);
             await fetchServices();
           }}
@@ -2774,27 +2979,63 @@ const Pricebook: React.FC = () => {
             if (!db) return;
             setIsLoading(true);
             let success = 0, fail = 0;
+            const errors: string[] = [];
+            
+            console.log('Equipment-Material Link Import Data:', data);
+            
             for (const row of data) {
               try {
-                const ref = doc(db, 'equipment', String(row.equipmentId));
+                console.log('Processing equipment-material link:', row);
+                
+                if (!row.equipmentId) {
+                  errors.push(`Missing equipmentId in row: ${JSON.stringify(row)}`);
+                  fail++;
+                  continue;
+                }
+                
+                if (!row.materialId) {
+                  errors.push(`Missing materialId in row: ${JSON.stringify(row)}`);
+                  fail++;
+                  continue;
+                }
+                
+                const ref = doc(db, 'tenants', tenantId, 'equipment', String(row.equipmentId));
                 const snap = await getDoc(ref);
-                if (!snap.exists()) { fail++; continue; }
+                
+                if (!snap.exists()) { 
+                  errors.push(`Equipment not found: ${row.equipmentId}`);
+                  fail++; 
+                  continue; 
+                }
+                
                 const eq = snap.data();
                 const materials = Array.isArray(eq.materials) ? [...eq.materials] : [];
                 const linkedMaterials = Array.isArray(eq.linkedMaterials) ? [...eq.linkedMaterials] : [];
+                
                 upsertLink(materials, 'materialId', row.materialId, {
                   materialId: row.materialId,
                   materialCode: row.materialCode,
                   quantity: row.quantity,
                   active: row.active,
                 });
+                
                 if (!linkedMaterials.includes(row.materialId)) linkedMaterials.push(row.materialId);
+                
                 await updateDoc(ref, { materials, linkedMaterials, updatedAt: serverTimestamp() });
                 success++;
-              } catch (e) { fail++; }
+              } catch (e) { 
+                console.error('Error linking material to equipment:', e, row);
+                errors.push(`Error processing row ${JSON.stringify(row)}: ${e}`);
+                fail++; 
+              }
             }
             setIsLoading(false);
-            alert(`Linked materials to equipment: ${success} succeeded, ${fail} failed.`);
+            
+            if (errors.length > 0) {
+              console.error('Equipment-Material Link Import Errors:', errors);
+            }
+            
+            alert(`Linked materials to equipment: ${success} succeeded, ${fail} failed.${errors.length > 0 ? '\nCheck console for details.' : ''}`);
             setShowImportEquipmentMaterialLinks(false);
             await fetchEquipment();
           }}
@@ -2806,6 +3047,8 @@ const Pricebook: React.FC = () => {
           isOpen={showCustomerImport}
           onClose={() => setShowCustomerImport(false)}
           onComplete={() => {/* Optionally refresh customers here */}}
+          userId={userId}
+          tenantId={tenantId}
         />
       )}
 

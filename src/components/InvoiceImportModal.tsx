@@ -2,12 +2,15 @@ import React, { useState } from 'react';
 import { Dialog } from '@headlessui/react';
 import { X } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { getFirestore, collection, doc, getDoc, setDoc, updateDoc, arrayUnion, query, where, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, updateDoc, arrayUnion, query, where, getDocs, writeBatch } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface InvoiceImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onComplete?: () => void;
+  userId?: string;
+  tenantId?: string;
 }
 
 const FIELD_MAP: { [key: string]: string } = {
@@ -44,7 +47,9 @@ const FIELD_MAP: { [key: string]: string } = {
   'Equipment Costs': 'equipmentCosts',
 };
 
-const InvoiceImportModal: React.FC<InvoiceImportModalProps> = ({ isOpen, onClose, onComplete }) => {
+const InvoiceImportModal: React.FC<InvoiceImportModalProps> = ({ isOpen, onClose, onComplete, userId, tenantId }) => {
+  console.log('🔥 InvoiceImportModal: Component rendered with props:', { isOpen, userId, tenantId });
+  
   const [step, setStep] = useState<'upload' | 'preview' | 'importing' | 'done'>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [rows, setRows] = useState<any[]>([]);
@@ -53,43 +58,87 @@ const InvoiceImportModal: React.FC<InvoiceImportModalProps> = ({ isOpen, onClose
   const [successCount, setSuccessCount] = useState(0);
   const [failCount, setFailCount] = useState(0);
   const [currentImportIndex, setCurrentImportIndex] = useState(0);
-  const db = getFirestore();
+
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
+    
+    console.log('📁 Invoice file selected:', { name: f.name, size: f.size, type: f.type });
+    
     setFile(f);
-    const data = await f.arrayBuffer();
-    const wb = XLSX.read(data);
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
-    setRows(json as any[]);
-    setHeaders(Object.keys(json[0] || {}));
-    setStep('preview');
+    
+    try {
+      const data = await f.arrayBuffer();
+      const wb = XLSX.read(data);
+      console.log('📋 Workbook sheets:', wb.SheetNames);
+      
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      
+      console.log('📊 Parsed invoice data:', {
+        totalRows: json.length,
+        firstRow: json[0],
+        headers: Object.keys(json[0] || {})
+      });
+      
+      setRows(json as any[]);
+      setHeaders(Object.keys(json[0] || {}));
+      setStep('preview');
+    } catch (error) {
+      console.error('❌ Error parsing invoice file:', error);
+      setErrors(prev => [...prev, `Error parsing file: ${error}`]);
+    }
   };
 
   const handleImport = async () => {
+    if (!tenantId) {
+      setErrors(prev => [...prev, 'Error: tenantId is missing. Please reload and try again.']);
+      return;
+    }
+    
+    if (!userId) {
+      setErrors(prev => [...prev, 'Error: userId is missing. Please reload and try again.']);
+      return;
+    }
+    
+    console.log('🔥 Firebase: Starting invoice import with tenantId:', tenantId, 'userId:', userId);
+    
+    // Test Firebase connection before starting import
+    try {
+      const testRef = doc(db, 'tenants', tenantId, 'invoices', 'test');
+      console.log('🔥 Firebase: Testing connection to path:', `tenants/${tenantId}/invoices/test`);
+      await getDoc(testRef);
+      console.log('✅ Firebase: Connection test successful');
+    } catch (error) {
+      console.error('❌ Firebase: Connection test failed:', error);
+      setErrors(prev => [...prev, `Firebase connection test failed: ${error}`]);
+      return;
+    }
+    
     setStep('importing');
     setErrors([]);
     setCurrentImportIndex(0);
     let success = 0, fail = 0;
 
-    // Constants for optimization - increased parallel processing
-    const MAX_BATCH_SIZE = 450; // Slightly reduced to account for relationship updates
-    const PARALLEL_BATCHES = 10; // Increased from 5 to 10
+    // Constants for optimization - balanced for speed and reliability
+    const MAX_BATCH_SIZE = 200; // Increased from job import's 100 for better speed
+    const PARALLEL_BATCHES = 4; // Increased from job import's 2 for better speed
     const totalRows = rows.length;
 
     // Calculate optimal batch size based on total rows
     const calculateBatchSize = (total: number) => {
-      if (total <= 1000) return Math.min(MAX_BATCH_SIZE, total);
-      if (total <= 5000) return Math.min(400, total);
-      return Math.min(300, total); // Smaller batches for very large imports
+      if (total <= 100) return Math.min(50, total); // Small batches for small imports
+      if (total <= 500) return Math.min(100, total); // Medium batches for medium imports
+      return Math.min(200, total); // Larger batches for large imports
     };
 
     const BATCH_SIZE = calculateBatchSize(totalRows);
 
     // Process rows in parallel batches
     for (let batchStart = 0; batchStart < totalRows; batchStart += BATCH_SIZE * PARALLEL_BATCHES) {
+      console.log(`📦 Processing batch group starting at row ${batchStart + 1} of ${totalRows}`);
+      
       // Create array of batch promises
       const batchPromises = [];
       
@@ -98,8 +147,10 @@ const InvoiceImportModal: React.FC<InvoiceImportModalProps> = ({ isOpen, onClose
         const currentBatchStart = batchStart + i * BATCH_SIZE;
         const currentBatchEnd = Math.min(currentBatchStart + BATCH_SIZE, totalRows);
         
+        console.log(`🔄 Starting batch ${i + 1}/${PARALLEL_BATCHES} (rows ${currentBatchStart + 1}-${currentBatchEnd})`);
+        
         // Add a small delay between batch starts to prevent overwhelming the database
-        await new Promise(resolve => setTimeout(resolve, i * 50));
+        await new Promise(resolve => setTimeout(resolve, i * 25)); // Reduced from 50ms to 25ms
 
         // Create a promise for this batch
         const batchPromise = (async () => {
@@ -108,15 +159,23 @@ const InvoiceImportModal: React.FC<InvoiceImportModalProps> = ({ isOpen, onClose
           let batchSuccess = 0;
           let batchFail = 0;
           
+          console.log(`📝 Processing ${batchRows.length} rows in this batch`);
+          
           // Process each row in the batch
           for (const row of batchRows) {
             try {
+              console.log(`🔍 Processing invoice row:`, row);
+              
               // Require Job ID, Customer ID, and Location ID
               const jobId = row['Job ID'] || row['jobId'];
               const customerId = row['Customer ID'] || row['customerId'];
               const locationId = row['Location ID'] || row['locationId'];
               let invoiceId = row['Invoice ID'] || row['id'];
+              
+              console.log(`📋 Row data extracted:`, { jobId, customerId, locationId, invoiceId });
+              
               if (!jobId || !customerId || !locationId) {
+                console.warn(`⚠️ Missing required fields:`, { jobId, customerId, locationId });
                 batchFail++;
                 setErrors(prev => [...prev, `Missing Job ID, Customer ID, or Location ID in row: ${JSON.stringify(row)}`]);
                 continue;
@@ -163,11 +222,21 @@ const InvoiceImportModal: React.FC<InvoiceImportModalProps> = ({ isOpen, onClose
                 }));
               }
 
-              // Add invoice to batch
-              batch.set(doc(db, 'invoices', invoiceId), invoice, { merge: true });
+              // Add invoice to batch using tenant-scoped collection
+              const invoiceDocPath = `tenants/${tenantId}/invoices/${invoiceId}`;
+              console.log(`🔥 Firebase: Adding invoice to batch - Path: ${invoiceDocPath}`);
+              console.log(`📋 Invoice data:`, { 
+                id: invoice.id, 
+                jobId: invoice.jobId,
+                customerId: invoice.customerId, 
+                locationId: invoice.locationId,
+                invoiceNumber: invoice.invoiceNumber,
+                status: invoice.status
+              });
+              batch.set(doc(db, 'tenants', tenantId!, 'invoices', invoiceId), invoice, { merge: true });
 
               // Update customer document to include invoice reference
-              const customerRef = doc(db, 'customers', customerId);
+              const customerRef = doc(db, 'tenants', tenantId!, 'customers', customerId);
               const customerSnap = await getDoc(customerRef);
               if (customerSnap.exists()) {
                 const customerData = customerSnap.data();
@@ -194,10 +263,26 @@ const InvoiceImportModal: React.FC<InvoiceImportModalProps> = ({ isOpen, onClose
 
           // Commit the batch
           try {
-            await batch.commit();
+            console.log(`🔥 Firebase: Committing batch with ${batchSuccess} operations`);
+            console.log(`🔥 Firebase: Batch contains ${batchRows.length} rows from index ${currentBatchStart} to ${currentBatchEnd - 1}`);
+            
+            const commitResult = await batch.commit();
+            console.log(`✅ Firebase: Batch committed successfully`, commitResult);
+            console.log(`✅ Firebase: Successfully processed ${batchSuccess} invoices in this batch`);
+            
             return { success: batchSuccess, fail: batchFail };
           } catch (e) {
-            setErrors(prev => [...prev, `Batch commit failed for rows ${currentBatchStart + 1}-${currentBatchEnd}: ${e}`]);
+            const error = `Firebase batch commit failed: ${e}`;
+            console.error(`❌ ${error}`);
+            console.error(`❌ Firebase: Failed batch details:`, {
+              batchStart: currentBatchStart,
+              batchEnd: currentBatchEnd,
+              rowCount: batchRows.length,
+              successCount: batchSuccess,
+              failCount: batchFail,
+              tenantId: tenantId
+            });
+            setErrors(prev => [...prev, error]);
             return { success: 0, fail: batchRows.length };
           }
         })();
@@ -216,9 +301,33 @@ const InvoiceImportModal: React.FC<InvoiceImportModalProps> = ({ isOpen, onClose
       
       success += batchResults.success;
       fail += batchResults.fail;
-      setCurrentImportIndex(Math.min(batchStart + BATCH_SIZE * PARALLEL_BATCHES, totalRows));
+      const newProgress = Math.min(batchStart + BATCH_SIZE * PARALLEL_BATCHES, totalRows);
+      setCurrentImportIndex(newProgress);
+      
+      // Add delay between batch groups to avoid overwhelming Firebase
+      if (newProgress < totalRows) {
+        await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay between batch groups
+      }
     }
 
+    console.log(`🔥 Firebase: Invoice import completed - ${success} successful, ${fail} failed out of ${totalRows} total rows`);
+    
+    // Verify data was actually written to Firebase
+    try {
+      console.log('🔍 Firebase: Verifying data was written to database...');
+      const invoicesRef = collection(db, 'tenants', tenantId, 'invoices');
+      const snapshot = await getDocs(invoicesRef);
+      console.log(`✅ Firebase: Found ${snapshot.size} total invoices in database`);
+      
+      if (snapshot.size === 0 && success > 0) {
+        console.warn('⚠️ Firebase: No invoices found in database despite successful commits - possible permission or path issue');
+        setErrors(prev => [...prev, 'Warning: Data may not have been saved to Firebase despite successful commits. Check Firebase permissions and rules.']);
+      }
+    } catch (error) {
+      console.error('❌ Firebase: Error verifying data:', error);
+      setErrors(prev => [...prev, `Error verifying data in Firebase: ${error}`]);
+    }
+    
     setSuccessCount(success);
     setFailCount(fail);
     setStep('done');
@@ -255,7 +364,12 @@ const InvoiceImportModal: React.FC<InvoiceImportModalProps> = ({ isOpen, onClose
               </table>
               {rows.length > 10 && <div className="text-xs text-gray-500 mt-2">Showing first 10 rows of {rows.length} total</div>}
             </div>
-            <button onClick={handleImport} className="px-4 py-2 bg-blue-600 text-white rounded">Import</button>
+            {(!tenantId || !userId) && (
+              <div className="mb-2 text-red-600 dark:text-red-400 font-semibold">
+                Error: User or tenant not ready yet. Please wait, then try again.
+              </div>
+            )}
+            <button onClick={handleImport} className="px-4 py-2 bg-blue-600 text-white rounded" disabled={!tenantId || !userId}>Import</button>
             <button onClick={onClose} className="ml-2 px-4 py-2 border rounded">Cancel</button>
           </div>
         )}

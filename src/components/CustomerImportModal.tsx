@@ -22,6 +22,15 @@ const FIELD_MAP: { [key: string]: string } = {
   'Phone Number': 'phone',
   'Email': 'email',
   'Full Address': 'billingAddress',
+  'Address': 'billingAddress',
+  'Billing Address': 'billingAddress',
+  'Street': 'street',
+  'Street Address': 'street',
+  'City': 'city',
+  'State': 'state',
+  'Zip': 'zip',
+  'Zip Code': 'zip',
+  'Postal Code': 'zip',
   'Do Not Mail': 'doNotMail',
   'Do Not Service': 'doNotService',
   'Customer Tags': 'tags',
@@ -249,16 +258,67 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
               console.log('Finished processing fields for:', row['Customer Name']);
               console.log('Processed customer object:', customer);
 
-              // Add locations array if missing
-              if ((customer as any).billingAddress && !Array.isArray((customer as any).locations)) {
-                console.log('Adding location for:', row['Customer Name']);
-                (customer as any).locations = [{
-                  id: `loc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-                  name: 'Primary Location',
-                  address: (customer as any).billingAddress,
-                  isPrimary: true,
-                  phone: (customer as any).phone || '',
-                }];
+              // Add locations array if missing - try multiple address field combinations
+              if (!Array.isArray((customer as any).locations)) {
+                console.log('Checking address fields for:', row['Customer Name']);
+                console.log('Available fields:', Object.keys(customer));
+                console.log('billingAddress:', (customer as any).billingAddress);
+                console.log('Full Address:', row['Full Address']);
+                console.log('Address:', row['Address']);
+                console.log('Street:', row['Street']);
+                console.log('City:', row['City']);
+                console.log('State:', row['State']);
+                console.log('Zip:', row['Zip']);
+                
+                let address = '';
+                
+                // Try different address field combinations
+                if ((customer as any).billingAddress) {
+                  address = (customer as any).billingAddress;
+                } else if (row['Full Address']) {
+                  address = row['Full Address'];
+                } else if (row['Address']) {
+                  address = row['Address'];
+                } else if (row['Billing Address']) {
+                  address = row['Billing Address'];
+                } else if ((customer as any).street || (customer as any).city || (customer as any).state || (customer as any).zip) {
+                  // Build address from mapped components
+                  const parts = [
+                    (customer as any).street,
+                    (customer as any).city,
+                    (customer as any).state,
+                    (customer as any).zip
+                  ].filter(Boolean);
+                  address = parts.join(', ');
+                } else if (row['Street'] || row['City'] || row['State'] || row['Zip']) {
+                  // Build address from raw components
+                  const parts = [
+                    row['Street'],
+                    row['City'],
+                    row['State'],
+                    row['Zip']
+                  ].filter(Boolean);
+                  address = parts.join(', ');
+                }
+                
+                console.log('Final address for', row['Customer Name'], ':', address);
+                
+                if (address) {
+                  console.log('Adding location for:', row['Customer Name']);
+                  (customer as any).locations = [{
+                    id: `loc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                    name: 'Primary Location',
+                    address: address,
+                    isPrimary: true,
+                    phone: (customer as any).phone || '',
+                  }];
+                  // Also set billingAddress for consistency
+                  (customer as any).billingAddress = address;
+                } else {
+                  console.log('No address found for:', row['Customer Name']);
+                  // Create empty locations array to prevent errors
+                  (customer as any).locations = [];
+                }
               }
 
               // Helper to clean Firestore IDs (no slashes, non-empty)

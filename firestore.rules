@@ -1,23 +1,193 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // TEMPORARY: Allow all writes for debugging import (forced redeploy)
-    match /{document=**} {
-      allow write: if true;
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
     }
-    match /{doc=**} {
-
-      // Read  ───────────────────────────────
-      allow read: if request.auth != null
-                   && request.auth.uid == resource.data.userId;
-
-      // Create (new doc)  ───────────────────
-      allow create: if request.auth != null
-                     && request.auth.uid == request.resource.data.userId;
-
-      // Update / Delete  ────────────────────
-      allow update, delete: if request.auth != null
-                             && request.auth.uid == resource.data.userId;
+    
+    function belongsToTenant(tenantId) {
+      return isAuthenticated() 
+        && request.auth.token != null
+        && 'tenantId' in request.auth.token 
+        && request.auth.token.tenantId == tenantId;
+    }
+    
+    function hasRole(role) {
+      return isAuthenticated() 
+        && request.auth.token != null
+        && 'role' in request.auth.token 
+        && request.auth.token.role == role;
+    }
+    
+    function isAdmin() {
+      return hasRole('admin');
+    }
+    
+    function isCsr() {
+      return hasRole('csr');
+    }
+    
+    function isTechnician() {
+      return hasRole('technician');
+    }
+    
+    function canRead() {
+      return isAdmin() || isCsr() || isTechnician();
+    }
+    
+    function canWrite() {
+      return isAdmin() || isCsr();
+    }
+    
+    function canDelete() {
+      return isAdmin();
+    }
+    
+    // Multi-tenant data structure: /tenants/{tenantId}/...
+    match /tenants/{tenantId} {
+      // Tenant document itself
+      allow read: if belongsToTenant(tenantId);
+      allow write: if belongsToTenant(tenantId) && isAdmin();
+      
+      // Main business collections (flat under tenant)
+      match /customers/{customerId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+      
+      match /jobs/{jobId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+      
+      match /staff/{staffId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+      
+      match /invoices/{invoiceId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+      
+      match /estimates/{estimateId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+      
+      // Pricebook collections (directly under tenant)
+      match /services/{serviceId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+      
+      match /materials/{materialId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+      
+      match /categories/{categoryId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+      
+      match /equipment/{equipmentId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+      
+      match /priceRules/{priceRuleId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+      
+      // Members collection (users within this tenant)
+      match /members/{userId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && isAdmin();
+        allow delete: if belongsToTenant(tenantId) && isAdmin();
+      }
+      
+      // Roles collection (role definitions)
+      match /roles/{roleId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow write: if belongsToTenant(tenantId) && isAdmin();
+      }
+      
+      // Settings collection
+      match /settings/{settingId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow write: if belongsToTenant(tenantId) && isAdmin();
+      }
+      
+      // GL Accounts
+      match /glAccounts/{accountId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow write: if belongsToTenant(tenantId) && isAdmin();
+      }
+      
+      // Schedule/shifts collection
+      match /schedule/{scheduleId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+      
+      // Payroll collection
+      match /payroll/{payrollId} {
+        allow read: if belongsToTenant(tenantId) && isAdmin();
+        allow write: if belongsToTenant(tenantId) && isAdmin();
+      }
+      
+      // Business units
+      match /businessUnits/{unitId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow write: if belongsToTenant(tenantId) && isAdmin();
+      }
+      
+      // Job types
+      match /jobTypes/{jobTypeId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+      
+      // Leads
+      match /leads/{leadId} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+      
+      // Any other subcollections under tenant
+      match /{collection}/{document} {
+        allow read: if belongsToTenant(tenantId) && canRead();
+        allow create, update: if belongsToTenant(tenantId) && canWrite();
+        allow delete: if belongsToTenant(tenantId) && canDelete();
+      }
+    }
+    
+    // Global user profiles (optional - for cross-tenant user data)
+    match /users/{userId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow write: if false; // Only backend can write user profiles
+    }
+    
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

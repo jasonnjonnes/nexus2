@@ -6,11 +6,11 @@ import {
   Package, Wrench, Truck, MessageSquare, DollarSign, Download,
   Send, Copy, AlertCircle, Building, Star, PaperclipIcon
 } from 'lucide-react';
-import { initializeApp } from "firebase/app";
 import { 
-  getFirestore, doc, getDoc, onSnapshot, updateDoc, addDoc, collection, query, where
+  doc, getDoc, onSnapshot, updateDoc, addDoc, collection, query, where
 } from "firebase/firestore";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { db } from '../firebase';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 
 // Helper functions
 const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
@@ -32,69 +32,32 @@ const generateEstimateNumber = () => {
 const JobDetail = () => {
   const { jobId } = useParams();
   const navigate = useNavigate();
+  const { user, tenantId } = useFirebaseAuth();
+  const userId = user?.uid || null;
+  
   const [job, setJob] = useState(null);
   const [customer, setCustomer] = useState(null);
   const [businessUnit, setBusinessUnit] = useState(null);
   const [serviceLocation, setServiceLocation] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [db, setDb] = useState(null);
-  const [userId, setUserId] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [estimates, setEstimates] = useState([]);
   const [isCreatingInvoice, setIsCreatingInvoice] = useState(false);
   const [isCreatingEstimate, setIsCreatingEstimate] = useState(false);
 
-  // Initialize Firebase
+  // Set loading state based on auth
   useEffect(() => {
-    const initializeFirebase = async () => {
-      try {
-        if (typeof __firebase_config === 'undefined' || !__firebase_config) {
-          setError("Firebase configuration is missing");
-          setIsLoading(false);
-          return;
-        }
-        
-        let firebaseConfig;
-        if (typeof __firebase_config === 'string') {
-          firebaseConfig = JSON.parse(__firebase_config);
-        } else {
-          firebaseConfig = __firebase_config;
-        }
-
-        const app = initializeApp(firebaseConfig);
-        const firestore = getFirestore(app);
-        const auth = getAuth(app);
-        
-        setDb(firestore);
-        
-        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-          if (user) {
-            setUserId(user.uid);
-            setIsLoading(false);
-          } else {
-            // Redirect to login or show a message
-            window.location.href = '/login';
-            setIsLoading(false);
-          }
-        });
-        
-        return () => unsubscribeAuth();
-      } catch (e) {
-        console.error("Error initializing Firebase:", e);
-        setError("Firebase initialization failed");
-        setIsLoading(false);
-      }
-    };
-
-    initializeFirebase();
-  }, []);
+    if (user !== null) {
+      setIsLoading(false);
+    }
+  }, [user]);
 
   // Load job data
   useEffect(() => {
-    if (!db || !jobId || !userId) return;
+    if (!db || !jobId || !userId || !tenantId) return;
 
-    const jobDocRef = doc(db, 'jobs', jobId);
+    const jobDocRef = doc(db, 'tenants', tenantId, 'jobs', jobId);
     const unsubscribe = onSnapshot(jobDocRef, async (docSnapshot) => {
       if (docSnapshot.exists()) {
         const jobData = { id: docSnapshot.id, ...docSnapshot.data() };
@@ -103,7 +66,7 @@ const JobDetail = () => {
         // Load customer data
         if (jobData.customerId) {
           try {
-            const customerDoc = await getDoc(doc(db, 'customers', jobData.customerId));
+            const customerDoc = await getDoc(doc(db, 'tenants', tenantId, 'customers', jobData.customerId));
             if (customerDoc.exists()) {
               const customerData = { id: customerDoc.id, ...customerDoc.data() };
               setCustomer(customerData);
@@ -128,7 +91,7 @@ const JobDetail = () => {
         // Load business unit data
         if (jobData.businessUnitId) {
           try {
-            const businessUnitDoc = await getDoc(doc(db, 'businessUnits', jobData.businessUnitId));
+            const businessUnitDoc = await getDoc(doc(db, 'tenants', tenantId, 'businessUnits', jobData.businessUnitId));
             if (businessUnitDoc.exists()) {
               setBusinessUnit({ id: businessUnitDoc.id, ...businessUnitDoc.data() });
             }
@@ -145,14 +108,14 @@ const JobDetail = () => {
     });
 
     return () => unsubscribe();
-  }, [db, jobId, userId]);
+  }, [db, jobId, userId, tenantId]);
 
   // Load invoices for this job
   useEffect(() => {
-    if (!db || !jobId || !userId) return;
+    if (!db || !jobId || !userId || !tenantId) return;
 
     const invoicesQuery = query(
-      collection(db, 'invoices'),
+      collection(db, 'tenants', tenantId, 'invoices'),
       where("jobId", "==", jobId),
       where("userId", "==", userId)
     );
@@ -166,14 +129,14 @@ const JobDetail = () => {
     });
 
     return () => unsubscribe();
-  }, [db, jobId, userId]);
+  }, [db, jobId, userId, tenantId]);
 
   // Load estimates for this job
   useEffect(() => {
-    if (!db || !jobId || !userId) return;
+    if (!db || !jobId || !userId || !tenantId) return;
 
     const estimatesQuery = query(
-      collection(db, 'estimates'),
+      collection(db, 'tenants', tenantId, 'estimates'),
       where("jobId", "==", jobId),
       where("userId", "==", userId)
     );
@@ -187,11 +150,11 @@ const JobDetail = () => {
     });
 
     return () => unsubscribe();
-  }, [db, jobId, userId]);
+  }, [db, jobId, userId, tenantId]);
 
   // Create Invoice
   const handleCreateInvoice = useCallback(async () => {
-    if (!job || !customer || !db || !userId) {
+    if (!job || !customer || !db || !userId || !tenantId) {
       alert('Missing required data to create invoice');
       return;
     }
@@ -264,7 +227,7 @@ const JobDetail = () => {
         userId: userId
       };
 
-      const docRef = await addDoc(collection(db, 'invoices'), invoiceData);
+      const docRef = await addDoc(collection(db, 'tenants', tenantId, 'invoices'), invoiceData);
       
       // Navigate to invoice detail page
       navigate(`/invoice/${docRef.id}`);
@@ -275,11 +238,11 @@ const JobDetail = () => {
     } finally {
       setIsCreatingInvoice(false);
     }
-  }, [job, customer, serviceLocation, businessUnit, db, userId, navigate]);
+  }, [job, customer, serviceLocation, businessUnit, db, userId, tenantId, navigate]);
 
   // Create Estimate
   const handleCreateEstimate = useCallback(async () => {
-    if (!job || !customer || !db || !userId) {
+    if (!job || !customer || !db || !userId || !tenantId) {
       alert('Missing required data to create estimate');
       return;
     }
@@ -354,7 +317,7 @@ const JobDetail = () => {
         userId: userId
       };
 
-      const docRef = await addDoc(collection(db, 'estimates'), estimateData);
+      const docRef = await addDoc(collection(db, 'tenants', tenantId, 'estimates'), estimateData);
       
       // Navigate to estimate detail page
       navigate(`/estimate/${docRef.id}`);
@@ -365,7 +328,7 @@ const JobDetail = () => {
     } finally {
       setIsCreatingEstimate(false);
     }
-  }, [job, customer, serviceLocation, businessUnit, db, userId, navigate]);
+  }, [job, customer, serviceLocation, businessUnit, db, userId, tenantId, navigate]);
 
   if (isLoading) {
     return (

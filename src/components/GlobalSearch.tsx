@@ -36,7 +36,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
   const [isLoading, setIsLoading] = useState(false);
   
   // Firebase state
-  const { user } = useFirebaseAuth();
+  const { user, tenantId } = useFirebaseAuth();
   const userId = user?.uid || null;
   
   // Data state
@@ -60,13 +60,13 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
 
   // Load data from Firebase
   useEffect(() => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
 
     const unsubscribes = [];
 
     // Load customers
     const customersQuery = query(
-      collection(db, 'customers'),
+      collection(db, 'tenants', tenantId, 'customers'),
       where("userId", "==", userId)
     );
     unsubscribes.push(onSnapshot(customersQuery, (querySnapshot) => {
@@ -74,12 +74,13 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
       querySnapshot.forEach((doc) => {
         customersData.push({ id: doc.id, ...doc.data() });
       });
+      console.log('GlobalSearch - Loaded customers:', customersData.length);
       setCustomers(customersData);
     }));
 
     // Load jobs
     const jobsQuery = query(
-      collection(db, 'jobs'),
+      collection(db, 'tenants', tenantId, 'jobs'),
       where("userId", "==", userId)
     );
     unsubscribes.push(onSnapshot(jobsQuery, (querySnapshot) => {
@@ -87,12 +88,13 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
       querySnapshot.forEach((doc) => {
         jobsData.push({ id: doc.id, ...doc.data() });
       });
+      console.log('GlobalSearch - Loaded jobs:', jobsData.length);
       setJobs(jobsData);
     }));
 
     // Load invoices
     const invoicesQuery = query(
-      collection(db, 'invoices'),
+      collection(db, 'tenants', tenantId, 'invoices'),
       where("userId", "==", userId)
     );
     unsubscribes.push(onSnapshot(invoicesQuery, (querySnapshot) => {
@@ -100,12 +102,13 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
       querySnapshot.forEach((doc) => {
         invoicesData.push({ id: doc.id, ...doc.data() });
       });
+      console.log('GlobalSearch - Loaded invoices:', invoicesData.length);
       setInvoices(invoicesData);
     }));
 
     // Load estimates
     const estimatesQuery = query(
-      collection(db, 'estimates'),
+      collection(db, 'tenants', tenantId, 'estimates'),
       where("userId", "==", userId)
     );
     unsubscribes.push(onSnapshot(estimatesQuery, (querySnapshot) => {
@@ -113,13 +116,14 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
       querySnapshot.forEach((doc) => {
         estimatesData.push({ id: doc.id, ...doc.data() });
       });
+      console.log('GlobalSearch - Loaded estimates:', estimatesData.length);
       setEstimates(estimatesData);
     }));
 
     return () => {
       unsubscribes.forEach(unsubscribe => unsubscribe());
     };
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   // Focus input when opened
   useEffect(() => {
@@ -148,6 +152,14 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
 
     const term = searchTerm.toLowerCase();
     const results: SearchResult[] = [];
+    
+    console.log('GlobalSearch - Searching for:', term);
+    console.log('Available data:', { 
+      customers: customers.length, 
+      jobs: jobs.length, 
+      invoices: invoices.length, 
+      estimates: estimates.length 
+    });
 
     // Helper function to check if text matches search term
     const matches = (text: string) => text?.toLowerCase().includes(term);
@@ -210,22 +222,70 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
     // Search jobs
     if (selectedFilter === 'all' || selectedFilter === 'jobs') {
       jobs.forEach(job => {
+        let matchesJob = false;
+        
+        // Search job-specific fields
         if (
           matches(job.jobNumber) ||
           matches(job.jobType) ||
           matches(job.description) ||
           matches(job.summary) ||
           matches(job.customerName) ||
-          matches(job.technician)
+          matches(job.technician) ||
+          matches(job.status) ||
+          matches(job.priority) ||
+          matches(job.notes)
         ) {
+          matchesJob = true;
+        }
+        
+        // Search by customer information if job has customerId
+        if (!matchesJob && job.customerId) {
+          const customer = customers.find(c => c.id === job.customerId);
+          if (customer) {
+            const customerMatches = 
+              matches(customer.name) ||
+              matches(customer.email) ||
+              matches(customer.phone) ||
+              matches(customer.company) ||
+              customer.tags?.some(tag => matches(tag));
+              
+            const locationMatches = customer.locations?.some(location => 
+              matches(location.address) ||
+              matches(location.name) ||
+              matches(location.city) ||
+              matches(location.state) ||
+              matches(location.zip) ||
+              matches(location.phone) ||
+              matches(location.contactPerson)
+            );
+            
+            if (customerMatches || locationMatches) {
+              console.log(`Job ${job.jobNumber || job.id} matched via customer:`, {
+                customerName: customer.name,
+                customerMatches,
+                locationMatches,
+                searchTerm: term
+              });
+              matchesJob = true;
+            }
+          }
+        }
+        
+        if (matchesJob) {
+          // Get customer info for display
+          const customer = job.customerId ? customers.find(c => c.id === job.customerId) : null;
+          const customerName = customer?.name || job.customerName || 'Unknown Customer';
+          
           results.push({
             id: job.id,
             type: 'job',
-            title: `Job ${job.jobNumber}`,
+            title: job.jobNumber ? `Job ${job.jobNumber}` : `Job ${job.id.slice(-6)}`,
             subtitle: job.jobType || 'Service Call',
-            details: `${job.customerName || 'Unknown Customer'} • ${job.technician || 'Unassigned'}`,
+            details: `${customerName} • ${job.technician || 'Unassigned'}`,
             metadata: job.status ? job.status.replace('_', ' ').charAt(0).toUpperCase() + job.status.slice(1) : undefined,
-            jobId: job.id
+            jobId: job.id,
+            customerId: job.customerId
           });
         }
       });
@@ -234,20 +294,60 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
     // Search invoices
     if (selectedFilter === 'all' || selectedFilter === 'invoices') {
       invoices.forEach(invoice => {
+        let matchesInvoice = false;
+        
+        // Search invoice-specific fields
         if (
           matches(invoice.invoiceNumber) ||
           matches(invoice.customerName) ||
           matches(invoice.description) ||
           matches(invoice.summary) ||
-          matches(invoice.jobNumber)
+          matches(invoice.jobNumber) ||
+          matches(invoice.status) ||
+          matches(invoice.notes) ||
+          matches(invoice.poNumber)
         ) {
+          matchesInvoice = true;
+        }
+        
+        // Search by customer information if invoice has customerId
+        if (!matchesInvoice && invoice.customerId) {
+          const customer = customers.find(c => c.id === invoice.customerId);
+          if (customer) {
+            if (
+              matches(customer.name) ||
+              matches(customer.email) ||
+              matches(customer.phone) ||
+              matches(customer.company) ||
+              customer.tags?.some(tag => matches(tag)) ||
+              customer.locations?.some(location => 
+                matches(location.address) ||
+                matches(location.name) ||
+                matches(location.city) ||
+                matches(location.state) ||
+                matches(location.zip) ||
+                matches(location.phone) ||
+                matches(location.contactPerson)
+              )
+            ) {
+              matchesInvoice = true;
+            }
+          }
+        }
+        
+        if (matchesInvoice) {
+          // Get customer info for display
+          const customer = invoice.customerId ? customers.find(c => c.id === invoice.customerId) : null;
+          const customerName = customer?.name || invoice.customerName || 'Unknown Customer';
+          
           results.push({
             id: invoice.id,
             type: 'invoice',
-            title: invoice.invoiceNumber,
-            subtitle: invoice.customerName || 'Unknown Customer',
+            title: invoice.invoiceNumber || `Invoice ${invoice.id.slice(-6)}`,
+            subtitle: customerName,
             details: `${invoice.summary || invoice.description || ''} • $${(invoice.total || 0).toFixed(2)}`,
-            metadata: invoice.status ? invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1) : undefined
+            metadata: invoice.status ? invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1) : undefined,
+            customerId: invoice.customerId
           });
         }
       });
@@ -256,20 +356,61 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
     // Search estimates
     if (selectedFilter === 'all' || selectedFilter === 'estimates') {
       estimates.forEach(estimate => {
+        let matchesEstimate = false;
+        
+        // Search estimate-specific fields
         if (
           matches(estimate.estimateNumber) ||
           matches(estimate.customerName) ||
           matches(estimate.description) ||
           matches(estimate.summary) ||
-          matches(estimate.jobNumber)
+          matches(estimate.jobNumber) ||
+          matches(estimate.status) ||
+          matches(estimate.notes) ||
+          matches(estimate.title) ||
+          matches(estimate.workDescription)
         ) {
+          matchesEstimate = true;
+        }
+        
+        // Search by customer information if estimate has customerId
+        if (!matchesEstimate && estimate.customerId) {
+          const customer = customers.find(c => c.id === estimate.customerId);
+          if (customer) {
+            if (
+              matches(customer.name) ||
+              matches(customer.email) ||
+              matches(customer.phone) ||
+              matches(customer.company) ||
+              customer.tags?.some(tag => matches(tag)) ||
+              customer.locations?.some(location => 
+                matches(location.address) ||
+                matches(location.name) ||
+                matches(location.city) ||
+                matches(location.state) ||
+                matches(location.zip) ||
+                matches(location.phone) ||
+                matches(location.contactPerson)
+              )
+            ) {
+              matchesEstimate = true;
+            }
+          }
+        }
+        
+        if (matchesEstimate) {
+          // Get customer info for display
+          const customer = estimate.customerId ? customers.find(c => c.id === estimate.customerId) : null;
+          const customerName = customer?.name || estimate.customerName || 'Unknown Customer';
+          
           results.push({
             id: estimate.id,
             type: 'estimate',
-            title: estimate.estimateNumber,
-            subtitle: estimate.customerName || 'Unknown Customer',
-            details: `${estimate.summary || estimate.description || ''} • $${(estimate.total || 0).toFixed(2)}`,
-            metadata: estimate.status ? estimate.status.charAt(0).toUpperCase() + estimate.status.slice(1) : undefined
+            title: estimate.estimateNumber || estimate.title || `Estimate ${estimate.id.slice(-6)}`,
+            subtitle: customerName,
+            details: `${estimate.summary || estimate.description || estimate.workDescription || ''} • $${(estimate.total || 0).toFixed(2)}`,
+            metadata: estimate.status ? estimate.status.charAt(0).toUpperCase() + estimate.status.slice(1) : undefined,
+            customerId: estimate.customerId
           });
         }
       });
@@ -325,10 +466,12 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
   const handleResultClick = (result: SearchResult) => {
     switch (result.type) {
       case 'customer':
-        navigate(`/customers`);
+        // Navigate to customers page with customer selected
+        navigate(`/customers`, { state: { selectedCustomerId: result.id } });
         break;
       case 'location':
-        navigate(`/customers`);
+        // Navigate to customers page with location selected
+        navigate(`/customers`, { state: { selectedCustomerId: result.customerId, selectedLocationId: result.locationId } });
         break;
       case 'job':
         navigate(`/job/${result.id}`);

@@ -154,12 +154,12 @@ const DEFAULT_MATERIALS = [
   }
 ];
 
-export const restorePricebookData = async (db: any, userId: string) => {
+export const restorePricebookData = async (db: any, userId: string, tenantId: string) => {
   const batch = writeBatch(db);
 
   // Add categories
   for (const category of SERVICETITAN_CATEGORY_MAPPING) {
-    const categoryRef = doc(collection(db, 'categories'));
+    const categoryRef = doc(collection(db, 'tenants', tenantId, 'categories'));
     batch.set(categoryRef, {
       ...category,
       userId,
@@ -170,7 +170,7 @@ export const restorePricebookData = async (db: any, userId: string) => {
 
   // Add price rules
   for (const rule of DEFAULT_PRICE_RULES) {
-    const ruleRef = doc(collection(db, 'price_rules'));
+    const ruleRef = doc(collection(db, 'tenants', tenantId, 'priceRules'));
     batch.set(ruleRef, {
       ...rule,
       userId,
@@ -181,7 +181,7 @@ export const restorePricebookData = async (db: any, userId: string) => {
 
   // Add services
   for (const service of DEFAULT_SERVICES) {
-    const serviceRef = doc(collection(db, 'services'));
+    const serviceRef = doc(collection(db, 'tenants', tenantId, 'services'));
     batch.set(serviceRef, {
       ...service,
       userId,
@@ -192,7 +192,7 @@ export const restorePricebookData = async (db: any, userId: string) => {
 
   // Add materials
   for (const material of DEFAULT_MATERIALS) {
-    const materialRef = doc(collection(db, 'materials'));
+    const materialRef = doc(collection(db, 'tenants', tenantId, 'materials'));
     batch.set(materialRef, {
       ...material,
       userId,

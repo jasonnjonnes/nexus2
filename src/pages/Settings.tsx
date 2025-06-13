@@ -5,8 +5,10 @@ import {
   getFirestore, Firestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, 
   query, where, setDoc, getDocs 
 } from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 import GLAccounts from '../components/GLAccounts';
+import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import { db } from '../firebase';
 
 interface SettingItem {
   name: string;
@@ -899,6 +901,7 @@ const StaffList: React.FC<StaffListProps> = ({
 interface BusinessUnitsManagementProps {
   db: Firestore;
   userId: string;
+  tenantId: string;
 }
 
 interface BusinessUnitFormData extends Omit<BusinessUnit, 'id' | 'userId'> {
@@ -918,7 +921,7 @@ interface BusinessUnitFormData extends Omit<BusinessUnit, 'id' | 'userId'> {
   isActive: boolean;
 }
 
-const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, userId }) => {
+const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, userId, tenantId }) => {
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
   const [editingUnit, setEditingUnit] = useState<BusinessUnit | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -944,7 +947,7 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
     if (!db || !userId) return;
 
     const businessUnitsQuery = query(
-      collection(db, 'businessUnits'),
+      collection(db, 'tenants', tenantId, 'businessUnits'),
       where("userId", "==", userId)
     );
 
@@ -992,7 +995,7 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
 
     if (window.confirm("Are you sure you want to delete this business unit?")) {
       try {
-        await deleteDoc(doc(db, 'businessUnits', unitId));
+        await deleteDoc(doc(db, 'tenants', tenantId, 'businessUnits', unitId));
       } catch (e) {
         const errorMessage = e instanceof Error ? e.message : "Failed to delete business unit";
         console.error("Error deleting business unit:", e);
@@ -1044,10 +1047,10 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
       };
 
       if (editingUnit) {
-        await updateDoc(doc(db, 'businessUnits', editingUnit.id), unitData);
+                  await updateDoc(doc(db, 'tenants', tenantId, 'businessUnits', editingUnit.id), unitData);
       } else {
         unitData.createdAt = new Date().toISOString();
-        await addDoc(collection(db, 'businessUnits'), unitData);
+        await addDoc(collection(db, 'tenants', tenantId, 'businessUnits'), unitData);
       }
 
       setEditingUnit(null);
@@ -1495,6 +1498,7 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
 interface CompanyProfileManagementProps {
   db: Firestore;
   userId: string;
+  tenantId: string;
 }
 
 interface CompanyProfileFormData extends Omit<CompanyProfile, 'id' | 'userId'> {
@@ -1513,7 +1517,7 @@ interface CompanyProfileFormData extends Omit<CompanyProfile, 'id' | 'userId'> {
   invoiceAutoParagraph: string;
 }
 
-const CompanyProfileManagement: React.FC<CompanyProfileManagementProps> = ({ db, userId }) => {
+const CompanyProfileManagement: React.FC<CompanyProfileManagementProps> = ({ db, userId, tenantId }) => {
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
   const [formData, setFormData] = useState<CompanyProfileFormData>({
     companyName: '',
@@ -1535,9 +1539,9 @@ const CompanyProfileManagement: React.FC<CompanyProfileManagementProps> = ({ db,
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
 
-    const profileRef = doc(db, 'companyProfiles', userId);
+    const profileRef = doc(db, 'tenants', tenantId, 'settings', 'companyProfile');
     const unsubscribe = onSnapshot(profileRef, (doc) => {
       if (doc.exists()) {
         const data = doc.data();
@@ -1594,7 +1598,7 @@ const CompanyProfileManagement: React.FC<CompanyProfileManagementProps> = ({ db,
 
     try {
       setIsSaving(true);
-      const profileRef = doc(db, 'companyProfiles', userId);
+      const profileRef = doc(db, 'tenants', tenantId, 'settings', 'companyProfile');
       await setDoc(profileRef, {
         ...formData,
         userId,
@@ -1906,6 +1910,8 @@ interface CompanyProfile {
 }
 
 const Settings: React.FC = () => {
+  const { user, tenantId } = useFirebaseAuth();
+  const userId = user?.uid;
   const [expandedSections, setExpandedSections] = useState<string[]>(['Staff Management']);
   const [selectedItem, setSelectedItem] = useState<string>('company-profile');
   const [searchTerm, setSearchTerm] = useState('');
@@ -1916,19 +1922,17 @@ const Settings: React.FC = () => {
   const [editingOfficeStaff, setEditingOfficeStaff] = useState<StaffMember | null>(null);
   const [editingTechnician, setEditingTechnician] = useState<StaffMember | null>(null);
   
-  // Firebase state
-  const [db, setDb] = useState<Firestore | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  // Remove old Firebase state - use context instead
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
   const [technicians, setTechnicians] = useState<StaffMember[]>([]);
 
   const loadStaff = async () => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
 
     try {
-      const staffRef = collection(db, 'users', userId, 'staff');
+      const staffRef = collection(db, 'tenants', tenantId, 'staff');
       const staffSnapshot = await getDocs(staffRef);
       const staffList = staffSnapshot.docs.map(doc => ({
         id: doc.id,
@@ -1944,84 +1948,17 @@ const Settings: React.FC = () => {
   };
 
   useEffect(() => {
-    const initializeFirebase = async () => {
-      try {
-        if (typeof __firebase_config === 'undefined' || !__firebase_config) {
-          throw new Error("Firebase configuration is missing");
-        }
-        
-        let firebaseConfig: FirebaseOptions;
-        try {
-          firebaseConfig = typeof __firebase_config === 'string' 
-            ? JSON.parse(__firebase_config) 
-            : __firebase_config;
-        } catch (parseError) {
-          throw new Error("Invalid Firebase configuration format");
-        }
-
-        const firebaseApp = initializeApp(firebaseConfig);
-        const firestore = getFirestore(firebaseApp);
-        setDb(firestore);
-
-        const auth = getAuth(firebaseApp);
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
-          if (user) {
-            setUserId(user.uid);
-            loadStaff();
-          } else {
-            setUserId(null);
-          }
-          setIsLoading(false);
-        });
-
-        return () => unsubscribe();
-      } catch (err) {
-        console.error('Error initializing Firebase:', err);
-        setError('Failed to initialize application. Please try again.');
-        setIsLoading(false);
-      }
-    };
-
-    initializeFirebase();
-  }, []);
-
-  const toggleSection = (sectionName: string) => {
-    setExpandedSections(prev => 
-      prev.includes(sectionName)
-        ? prev.filter(name => name !== sectionName)
-        : [...prev, sectionName]
-    );
-  };
-
-  const handleItemClick = (path: string) => {
-    setSelectedItem(path);
-  };
-
-  const handleEditOfficeStaff = (staff: StaffMember) => {
-    setEditingOfficeStaff(staff);
-    setShowOfficeStaffForm(true);
-  };
-
-  const handleEditTechnician = (staff: StaffMember) => {
-    setEditingTechnician(staff);
-    setShowTechnicianForm(true);
-  };
-
-  const handleAddOfficeStaff = () => {
-    setEditingOfficeStaff(null);
-    setShowOfficeStaffForm(true);
-  };
-
-  const handleAddTechnician = () => {
-    setEditingTechnician(null);
-    setShowTechnicianForm(true);
-  };
+    if (db && userId && tenantId) {
+      setIsLoading(true);
+      loadStaff().finally(() => setIsLoading(false));
+    }
+  }, [db, userId, tenantId]);
 
   const handleSaveStaff = async (staffData: Omit<StaffMember, 'id'>) => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
 
     try {
-      const staffRef = collection(db, 'users', userId, 'staff');
+      const staffRef = collection(db, 'tenants', tenantId, 'staff');
       const staffDataWithUser = {
         ...staffData,
         userId,
@@ -2056,11 +1993,11 @@ const Settings: React.FC = () => {
   };
 
   const handleDeleteStaff = async (staffId: string) => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
 
     if (window.confirm('Are you sure you want to delete this staff member?')) {
       try {
-        await deleteDoc(doc(db, 'users', userId, 'staff', staffId));
+        await deleteDoc(doc(db, 'tenants', tenantId, 'staff', staffId));
         // Refresh staff list
         await loadStaff();
       } catch (err) {
@@ -2068,6 +2005,38 @@ const Settings: React.FC = () => {
         setError('Failed to delete staff member. Please try again.');
       }
     }
+  };
+
+  const toggleSection = (sectionName: string) => {
+    setExpandedSections(prev => 
+      prev.includes(sectionName)
+        ? prev.filter(name => name !== sectionName)
+        : [...prev, sectionName]
+    );
+  };
+
+  const handleItemClick = (path: string) => {
+    setSelectedItem(path);
+  };
+
+  const handleEditOfficeStaff = (staff: StaffMember) => {
+    setEditingOfficeStaff(staff);
+    setShowOfficeStaffForm(true);
+  };
+
+  const handleEditTechnician = (staff: StaffMember) => {
+    setEditingTechnician(staff);
+    setShowTechnicianForm(true);
+  };
+
+  const handleAddOfficeStaff = () => {
+    setEditingOfficeStaff(null);
+    setShowOfficeStaffForm(true);
+  };
+
+  const handleAddTechnician = () => {
+    setEditingTechnician(null);
+    setShowTechnicianForm(true);
   };
 
   const filteredSections = settingsSections.map(section => ({
@@ -2146,12 +2115,12 @@ const Settings: React.FC = () => {
           </div>
         )}
         
-        {selectedItem === 'company-profile' && db && userId && (
-          <CompanyProfileManagement db={db} userId={userId} />
-        )}
-        {selectedItem === 'business-units' && db && userId && (
-          <BusinessUnitsManagement db={db} userId={userId} />
-        )}
+                  {selectedItem === 'company-profile' && db && userId && tenantId && (
+                           <CompanyProfileManagement db={db} userId={userId} tenantId={tenantId} />
+          )}
+          {selectedItem === 'business-units' && db && userId && tenantId && (
+                           <BusinessUnitsManagement db={db} userId={userId} tenantId={tenantId} />
+          )}
         
         {selectedItem === 'office-staff' && db && userId && (
           <div className="space-y-6">

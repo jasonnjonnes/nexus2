@@ -251,15 +251,22 @@ const Inbound: React.FC = () => {
     requireSignature: false
   });
 
-  const { user } = useFirebaseAuth();
+  const { user, tenantId } = useFirebaseAuth();
   const userId = user?.uid || null;
+
+  // Manage loading state
+  useEffect(() => {
+    if (db && userId && tenantId) {
+      setIsLoading(false);
+    }
+  }, [db, userId, tenantId]);
 
   // Load customers
   useEffect(() => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
 
     const q = query(
-      collection(db, 'customers'),
+      collection(db, 'tenants', tenantId, 'customers'),
       where("userId", "==", userId)
     );
     
@@ -274,14 +281,14 @@ const Inbound: React.FC = () => {
     });
     
     return () => unsubscribe();
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   // Load business units
   useEffect(() => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
 
     const businessUnitsQuery = query(
-      collection(db, 'businessUnits'),
+      collection(db, 'tenants', tenantId, 'businessUnits'),
       where("userId", "==", userId),
       where("status", "==", "active")
     );
@@ -297,14 +304,14 @@ const Inbound: React.FC = () => {
     });
     
     return () => unsubscribe();
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   // Load job types
   useEffect(() => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
 
     const jobTypesQuery = query(
-      collection(db, 'jobTypes'),
+      collection(db, 'tenants', tenantId, 'jobTypes'),
       where("userId", "==", userId),
       where("status", "==", "active")
     );
@@ -340,14 +347,14 @@ const Inbound: React.FC = () => {
     });
     
     return () => unsubscribe();
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   // Load active technicians
   useEffect(() => {
-    if (!db || !userId) return;
+    if (!db || !userId || !tenantId) return;
 
     const techQuery = query(
-      collection(db, 'staff'),
+      collection(db, 'tenants', tenantId, 'staff'),
       where("userId", "==", userId),
       where("staffType", "==", "technician"),
       where("status", "==", "active")
@@ -370,7 +377,7 @@ const Inbound: React.FC = () => {
     });
     
     return () => unsubscribe();
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   // Filter customers based on search
   useEffect(() => {
@@ -392,7 +399,7 @@ const Inbound: React.FC = () => {
   }, [searchTerm, customers]);
 
   const handleCreateCustomer = useCallback(async (newCustomerData) => {
-    if (db && userId) {
+    if (db && userId && tenantId) {
       try {
         const customerDataWithUser = {
           ...newCustomerData,
@@ -400,14 +407,14 @@ const Inbound: React.FC = () => {
         };
         
         const customId = `customer_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        await setDoc(doc(db, 'customers', customId), customerDataWithUser);
+        await setDoc(doc(db, 'tenants', tenantId, 'customers', customId), customerDataWithUser);
         setShowCreateCustomer(false);
       } catch (e) {
         console.error("Error creating customer:", e);
         setError("Failed to create customer");
       }
     }
-  }, [db, userId]);
+  }, [db, userId, tenantId]);
 
   const handleJobFormChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -431,7 +438,7 @@ const Inbound: React.FC = () => {
   };
 
   const handleBookJob = async () => {
-    if (!selectedCustomer || !db || !userId) {
+    if (!selectedCustomer || !db || !userId || !tenantId) {
       alert('Please select a customer first');
       return;
     }
@@ -529,7 +536,7 @@ const Inbound: React.FC = () => {
       };
 
       // Save job to Firebase
-      const jobDocRef = await addDoc(collection(db, 'jobs'), jobData);
+      const jobDocRef = await addDoc(collection(db, 'tenants', tenantId, 'jobs'), jobData);
       
       // Navigate to the job detail page
       navigate(`/job/${jobDocRef.id}`);
@@ -541,7 +548,7 @@ const Inbound: React.FC = () => {
   };
 
   const handleSaveAsLead = async () => {
-    if (!selectedCustomer || !db || !userId) {
+    if (!selectedCustomer || !db || !userId || !tenantId) {
       alert('Please select a customer first');
       return;
     }
@@ -563,7 +570,7 @@ const Inbound: React.FC = () => {
         userId: userId
       };
 
-      await addDoc(collection(db, 'leads'), leadData);
+      await addDoc(collection(db, 'tenants', tenantId, 'leads'), leadData);
       
       // Reset form
       setJobForm({
