@@ -10,6 +10,11 @@ import Settings from './pages/Settings';
 import JobDetail from './pages/JobDetail';
 import InvoiceDetail from './pages/InvoiceDetail';
 import EstimateDetail from './pages/EstimateDetail';
+import Payroll from './pages/Payroll';
+import Dispatch from './pages/Dispatch';
+import Inbound from './pages/Inbound';
+import Automations from './pages/Automations';
+import Accounting from './pages/Accounting';
 import { Unauthorized } from './pages/Unauthorized';
 import { BasicLogin } from './pages/BasicLogin';
 import CompanyOnboarding from './pages/CompanyOnboarding';
@@ -88,6 +93,56 @@ export default function App() {
               <BasicProtectedRoute>
                 <Layout>
                   <Settings />
+                </Layout>
+              </BasicProtectedRoute>
+            }
+          />
+          <Route
+            path="/payroll"
+            element={
+              <BasicProtectedRoute>
+                <Layout>
+                  <Payroll />
+                </Layout>
+              </BasicProtectedRoute>
+            }
+          />
+          <Route
+            path="/dispatch"
+            element={
+              <BasicProtectedRoute>
+                <Layout>
+                  <Dispatch />
+                </Layout>
+              </BasicProtectedRoute>
+            }
+          />
+          <Route
+            path="/inbound"
+            element={
+              <BasicProtectedRoute>
+                <Layout>
+                  <Inbound />
+                </Layout>
+              </BasicProtectedRoute>
+            }
+          />
+          <Route
+            path="/automations"
+            element={
+              <BasicProtectedRoute>
+                <Layout>
+                  <Automations />
+                </Layout>
+              </BasicProtectedRoute>
+            }
+          />
+          <Route
+            path="/accounting"
+            element={
+              <BasicProtectedRoute>
+                <Layout>
+                  <Accounting />
                 </Layout>
               </BasicProtectedRoute>
             }

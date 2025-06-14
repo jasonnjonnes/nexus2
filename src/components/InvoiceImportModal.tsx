@@ -237,6 +237,24 @@ const InvoiceImportModal: React.FC<InvoiceImportModalProps> = ({ isOpen, onClose
                 }));
               }
 
+              // Create default service if no services exist
+              if (!invoice.services || !Array.isArray(invoice.services) || invoice.services.length === 0) {
+                const invoiceTotal = parseFloat(invoice.total || invoice.Total || '0') || 0;
+                const defaultService = {
+                  id: `service_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                  name: 'Default Service',
+                  description: 'Auto-generated service from invoice import',
+                  quantity: 1,
+                  price: invoiceTotal,
+                  total: invoiceTotal,
+                  category: 'General',
+                  taxable: true,
+                  createdAt: new Date().toISOString()
+                };
+                invoice.services = [defaultService];
+                console.log(`📋 Created default service for invoice ${invoiceId} with total: $${invoiceTotal}`);
+              }
+
               // Add invoice to batch using tenant-scoped collection
               const invoiceDocPath = `tenants/${tenantId}/invoices/${invoiceId}`;
               console.log(`🔥 Firebase: Adding invoice to batch - Path: ${invoiceDocPath}`);
