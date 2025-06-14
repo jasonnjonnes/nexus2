@@ -2,7 +2,7 @@ import { auth } from '../firebase';
 
 // Base API configuration
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://api.nexusinc.io'
+  ? 'https://pro.nexus.io/api'
   : 'http://localhost:5001/servicepro-4c705/nam5/api';
 
 interface ApiResponse<T> {

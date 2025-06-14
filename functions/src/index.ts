@@ -7,7 +7,15 @@ admin.initializeApp();
 
 // Create Express app for REST API
 const app = express();
-app.use(cors({ origin: true }));
+app.use(cors({ 
+  origin: [
+    'https://pro.nexus.io',
+    'https://nexus.io',
+    'https://www.nexus.io',
+    'http://localhost:5173', // for development
+    'http://localhost:3000'  // for development
+  ]
+}));
 app.use(express.json());
 
 /**
