@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { collection, doc, getDoc, setDoc, updateDoc, arrayUnion, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
+import { processImportedBusinessUnitsAndJobTypes } from '../utils/businessUnitsJobTypes';
 
 interface InvoiceImportModalProps {
   isOpen: boolean;
@@ -120,6 +121,16 @@ const InvoiceImportModal: React.FC<InvoiceImportModalProps> = ({ isOpen, onClose
     setErrors([]);
     setCurrentImportIndex(0);
     let success = 0, fail = 0;
+
+    // First, process business units and job types from import data
+    try {
+      console.log('🔧 Processing business units and job types from import data...');
+      await processImportedBusinessUnitsAndJobTypes(tenantId, userId, rows);
+      console.log('✅ Successfully processed business units and job types');
+    } catch (error) {
+      console.error('❌ Error processing business units and job types:', error);
+      setErrors(prev => [...prev, `Error creating business units/job types: ${error}`]);
+    }
 
     // Constants for optimization - balanced for speed and reliability
     const MAX_BATCH_SIZE = 200; // Increased from job import's 100 for better speed

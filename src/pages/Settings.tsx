@@ -6,6 +6,7 @@ import {
 } from "firebase/firestore";
 import GLAccounts from '../components/GLAccounts';
 import StaffInvitationModal from '../components/StaffInvitationModal';
+import AuthMethodManager from '../components/AuthMethodManager';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import { db } from '../firebase';
 
@@ -23,6 +24,7 @@ const settingsSections: SettingSection[] = [
   {
     name: 'Your Account',
     items: [
+      { name: 'Authentication Methods', path: 'auth-methods' },
       { name: 'Billing', path: 'billing' },
       { name: 'Company Profile', path: 'company-profile' },
       { name: 'Feature Configurations', path: 'feature-configurations' },
@@ -956,8 +958,8 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
     tags: [],
     defaultWarehouse: '',
     currency: 'USD',
-    invoiceHeader: '',
-    invoiceMessage: '',
+    invoiceHeader: 'I hereby authorize {businessunit_companyname} to proceed with the work described in the attached proposal/estimate dated [Date], including all materials, labor, and services specified therein, for the total amount of ${invoicetotal}. I understand and agree to the terms and conditions outlined in this agreement, including the project timeline, payment schedule, and scope of work. By signing below, I confirm that I have the authority to approve this work and commit to payment upon satisfactory completion.',
+    invoiceMessage: 'Thanks for doing business with us!',
     logo: '',
     isActive: true
   });
@@ -1066,8 +1068,8 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
       tags: [],
       defaultWarehouse: '',
       currency: 'USD',
-      invoiceHeader: '',
-      invoiceMessage: '',
+      invoiceHeader: 'I hereby authorize {businessunit_companyname} to proceed with the work described in the attached proposal/estimate dated [Date], including all materials, labor, and services specified therein, for the total amount of ${invoicetotal}. I understand and agree to the terms and conditions outlined in this agreement, including the project timeline, payment schedule, and scope of work. By signing below, I confirm that I have the authority to approve this work and commit to payment upon satisfactory completion.',
+      invoiceMessage: 'Thanks for doing business with us!',
       logo: '',
       isActive: true
     });
@@ -1107,8 +1109,8 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
         tags: [],
         defaultWarehouse: '',
         currency: 'USD',
-        invoiceHeader: '',
-        invoiceMessage: '',
+        invoiceHeader: 'I hereby authorize {businessunit_companyname} to proceed with the work described in the attached proposal/estimate dated [Date], including all materials, labor, and services specified therein, for the total amount of ${invoicetotal}. I understand and agree to the terms and conditions outlined in this agreement, including the project timeline, payment schedule, and scope of work. By signing below, I confirm that I have the authority to approve this work and commit to payment upon satisfactory completion.',
+        invoiceMessage: 'Thanks for doing business with us!',
         logo: '',
         isActive: true
       });
@@ -1293,8 +1295,8 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
                       tags: [],
                       defaultWarehouse: '',
                       currency: 'USD',
-                      invoiceHeader: '',
-                      invoiceMessage: '',
+                      invoiceHeader: 'I hereby authorize {businessunit_companyname} to proceed with the work described in the attached proposal/estimate dated [Date], including all materials, labor, and services specified therein, for the total amount of ${invoicetotal}. I understand and agree to the terms and conditions outlined in this agreement, including the project timeline, payment schedule, and scope of work. By signing below, I confirm that I have the authority to approve this work and commit to payment upon satisfactory completion.',
+                      invoiceMessage: 'Thanks for doing business with us!',
                       logo: '',
                       isActive: true
                     });
@@ -1317,7 +1319,7 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Name *
+                      Company Name *
                     </label>
                     <input
                       type="text"
@@ -1330,7 +1332,7 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Official Name *
+                      Business Unit Name *
                     </label>
                     <input
                       type="text"
@@ -1454,30 +1456,30 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
                   />
                 </div>
 
-                {/* Invoice Header */}
+                {/* Authorization Paragraph */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Invoice Header
+                    Authorization Paragraph
                   </label>
                   <textarea
                     value={formData.invoiceHeader}
                     onChange={(e) => setFormData(prev => ({ ...prev, invoiceHeader: e.target.value }))}
-                    rows={3}
-                    placeholder="Company Name&#10;Address Line 1&#10;Address Line 2"
+                    rows={4}
+                    placeholder="I hereby authorize {businessunit_companyname} to proceed with the work described in the attached proposal/estimate dated [Date], including all materials, labor, and services specified therein, for the total amount of ${invoicetotal}. I understand and agree to the terms and conditions outlined in this agreement, including the project timeline, payment schedule, and scope of work. By signing below, I confirm that I have the authority to approve this work and commit to payment upon satisfactory completion."
                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   />
                 </div>
 
-                {/* Invoice Message */}
+                {/* Company Message */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Invoice Message
+                    Company Message
                   </label>
                   <textarea
                     value={formData.invoiceMessage}
                     onChange={(e) => setFormData(prev => ({ ...prev, invoiceMessage: e.target.value }))}
-                    rows={3}
-                    placeholder="Company Name&#10;License #M-44821, Technician Name"
+                    rows={2}
+                    placeholder="Thanks for doing business with us!"
                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   />
                 </div>
@@ -1512,8 +1514,8 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
                       tags: [],
                       defaultWarehouse: '',
                       currency: 'USD',
-                      invoiceHeader: '',
-                      invoiceMessage: '',
+                      invoiceHeader: 'I hereby authorize {businessunit_companyname} to proceed with the work described in the attached proposal/estimate dated [Date], including all materials, labor, and services specified therein, for the total amount of ${invoicetotal}. I understand and agree to the terms and conditions outlined in this agreement, including the project timeline, payment schedule, and scope of work. By signing below, I confirm that I have the authority to approve this work and commit to payment upon satisfactory completion.',
+                      invoiceMessage: 'Thanks for doing business with us!',
                       logo: '',
                       isActive: true
                     });
@@ -1527,6 +1529,381 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
                   {editingUnit ? 'Update' : 'Create'} Business Unit
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Job Types Management Component
+interface JobTypesManagementProps {
+  db: Firestore;
+  userId: string;
+  tenantId: string;
+}
+
+interface JobType {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  isActive: boolean;
+  userId: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface JobTypeFormData extends Omit<JobType, 'id' | 'userId'> {
+  name: string;
+  description: string;
+  category: string;
+  isActive: boolean;
+}
+
+const JobTypesManagement: React.FC<JobTypesManagementProps> = ({ db, userId, tenantId }) => {
+  const [jobTypes, setJobTypes] = useState<JobType[]>([]);
+  const [editingJobType, setEditingJobType] = useState<JobType | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [formData, setFormData] = useState<JobTypeFormData>({
+    name: '',
+    description: '',
+    category: '',
+    isActive: true
+  });
+
+  useEffect(() => {
+    if (!db || !userId) return;
+
+    const jobTypesQuery = query(
+      collection(db, 'tenants', tenantId, 'jobTypes'),
+      where("userId", "==", userId)
+    );
+
+    const unsubscribe = onSnapshot(jobTypesQuery, (querySnapshot) => {
+      const types: JobType[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        types.push({
+          id: doc.id,
+          userId,
+          name: data.name || '',
+          description: data.description || '',
+          category: data.category || '',
+          isActive: data.isActive ?? true,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt
+        });
+      });
+      setJobTypes(types);
+      setIsLoading(false);
+    }, (error) => {
+      console.error("Error loading job types:", error);
+      setError("Failed to load job types");
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [db, userId]);
+
+  const handleDelete = async (jobTypeId: string): Promise<void> => {
+    if (!db) {
+      setError("Database not ready. Please try again.");
+      return;
+    }
+
+    if (window.confirm("Are you sure you want to delete this job type?")) {
+      try {
+        await deleteDoc(doc(db, 'tenants', tenantId, 'jobTypes', jobTypeId));
+      } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : "Failed to delete job type";
+        console.error("Error deleting job type:", e);
+        setError(errorMessage);
+      }
+    }
+  };
+
+  const handleEdit = (jobType: JobType): void => {
+    setEditingJobType(jobType);
+    setShowForm(true);
+    setFormData({
+      name: jobType.name,
+      description: jobType.description,
+      category: jobType.category,
+      isActive: jobType.isActive
+    });
+  };
+
+  const handleAdd = (): void => {
+    setEditingJobType(null);
+    setShowForm(true);
+    setFormData({
+      name: '',
+      description: '',
+      category: '',
+      isActive: true
+    });
+  };
+
+  const handleSave = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    e.preventDefault();
+    if (!db || !userId) {
+      setError("Database not ready. Please try again.");
+      return;
+    }
+
+    try {
+      const jobTypeData = {
+        ...formData,
+        userId,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (editingJobType) {
+        await updateDoc(doc(db, 'tenants', tenantId, 'jobTypes', editingJobType.id), jobTypeData);
+      } else {
+        jobTypeData.createdAt = new Date().toISOString();
+        await addDoc(collection(db, 'tenants', tenantId, 'jobTypes'), jobTypeData);
+      }
+
+      setEditingJobType(null);
+      setShowForm(false);
+      setFormData({
+        name: '',
+        description: '',
+        category: '',
+        isActive: true
+      });
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : "Failed to save job type";
+      console.error("Error saving job type:", e);
+      setError(errorMessage);
+    }
+  };
+
+  const categoryOptions = [
+    'Service Call',
+    'Installation',
+    'Maintenance',
+    'Repair',
+    'Inspection',
+    'Emergency',
+    'Estimate',
+    'Diagnosis'
+  ];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Job Types</h1>
+        <button
+          onClick={handleAdd}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+        >
+          <Plus size={16} className="mr-2" />
+          Add Job Type
+        </button>
+      </div>
+
+      {/* Job Types List */}
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-100 dark:border-slate-700">
+        {jobTypes.length === 0 ? (
+          <div className="p-8 text-center">
+            <Briefcase size={48} className="mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+            <h4 className="text-lg font-medium text-gray-800 dark:text-gray-200 mb-2">
+              No Job Types Yet
+            </h4>
+            <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
+              Create job types to categorize different types of work your company performs.
+            </p>
+            <button
+              onClick={handleAdd}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Add First Job Type
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+              <thead>
+                <tr className="bg-gray-50 dark:bg-slate-700/50">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Job Type
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Category
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Description
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
+                {jobTypes.map(jobType => (
+                  <tr key={jobType.id} className="hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        {jobType.name}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
+                      {jobType.category}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
+                      {jobType.description}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        jobType.isActive 
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                          : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                      }`}>
+                        {jobType.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="flex justify-end space-x-2">
+                        <button
+                          onClick={() => handleEdit(jobType)}
+                          className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(jobType.id)}
+                          className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Job Type Form Modal */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <form onSubmit={handleSave}>
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-700">
+                <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100">
+                  {editingJobType ? 'Edit Job Type' : 'Add Job Type'}
+                </h3>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setEditingJobType(null);
+                    setShowForm(false);
+                    setFormData({
+                      name: '',
+                      description: '',
+                      category: '',
+                      isActive: true
+                    });
+                  }}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded"
+                >
+                  <X size={16} className="text-gray-500" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Job Type Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
+                    placeholder="e.g., AC Repair, HVAC Installation"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Category
+                  </label>
+                  <select
+                    value={formData.category}
+                    onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
+                  >
+                    <option value="">Select category...</option>
+                    {categoryOptions.map(category => (
+                      <option key={category} value={category}>{category}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Description
+                  </label>
+                  <textarea
+                    value={formData.description}
+                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
+                    placeholder="Brief description of this job type..."
+                  />
+                </div>
+
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="isActive"
+                    checked={formData.isActive}
+                    onChange={(e) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
+                    className="mr-2"
+                  />
+                  <label htmlFor="isActive" className="text-sm text-gray-700 dark:text-gray-300">
+                    Active
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingJobType(null);
+                    setShowForm(false);
+                    setFormData({
+                      name: '',
+                      description: '',
+                      category: '',
+                      isActive: true
+                    });
+                  }}
+                  className="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  {editingJobType ? 'Update' : 'Create'} Job Type
                 </button>
               </div>
             </form>
@@ -2170,11 +2547,19 @@ const Settings: React.FC = () => {
           </div>
         )}
         
+                  {selectedItem === 'auth-methods' && (
+                    <div className="max-w-4xl">
+                      <AuthMethodManager />
+                    </div>
+                  )}
                   {selectedItem === 'company-profile' && db && userId && tenantId && (
                            <CompanyProfileManagement db={db} userId={userId} tenantId={tenantId} />
           )}
           {selectedItem === 'business-units' && db && userId && tenantId && (
                            <BusinessUnitsManagement db={db} userId={userId} tenantId={tenantId} />
+          )}
+          {selectedItem === 'job-types' && db && userId && tenantId && (
+                           <JobTypesManagement db={db} userId={userId} tenantId={tenantId} />
           )}
         
         {selectedItem === 'office-staff' && db && userId && (

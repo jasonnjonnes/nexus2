@@ -1,38 +1,27 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { FirebaseAuthProvider } from './contexts/FirebaseAuthContext';
-import { BasicProtectedRoute } from './components/BasicProtectedRoute';
-import { BasicLogin } from './pages/BasicLogin';
-import { BasicRegister } from './pages/BasicRegister';
-import InviteSignup from './pages/InviteSignup';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import BasicProtectedRoute from './components/BasicProtectedRoute';
 import Layout from './components/Layout';
+import { FirebaseAuthProvider } from './contexts/FirebaseAuthContext';
 import Dashboard from './pages/Dashboard';
-import ApiTest from './components/ApiTest';
-import Inbound from './pages/Inbound';
-import Schedule from './pages/Schedule';
-import Dispatch from './pages/Dispatch';
-import Pricebook from './pages/Pricebook';
-import Automations from './pages/Automations';
-import Accounting from './pages/Accounting';
-import Payroll from './pages/Payroll';
 import Customers from './pages/Customers';
-import JobDetail from './pages/JobDetail';
-import EstimateDetail from './pages/EstimateDetail';
-import InvoiceDetail from './pages/InvoiceDetail';
+import Pricebook from './pages/Pricebook';
 import Settings from './pages/Settings';
+import JobDetail from './pages/JobDetail';
+import InvoiceDetail from './pages/InvoiceDetail';
+import EstimateDetail from './pages/EstimateDetail';
 import { Unauthorized } from './pages/Unauthorized';
+import { BasicLogin } from './pages/BasicLogin';
+import CompanyOnboarding from './pages/CompanyOnboarding';
 
 export default function App() {
   return (
-    <Router>
-      <FirebaseAuthProvider>
+    <FirebaseAuthProvider>
+      <Router>
         <Routes>
-          {/* Public routes */}
           <Route path="/login" element={<BasicLogin />} />
-          <Route path="/register" element={<BasicRegister />} />
-          <Route path="/invite/:token" element={<InviteSignup />} />
+          <Route path="/onboarding" element={<CompanyOnboarding />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
-
-          {/* Protected routes */}
           <Route
             path="/"
             element={
@@ -54,21 +43,21 @@ export default function App() {
             }
           />
           <Route
-            path="/settings"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Settings />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
             path="/job/:jobId"
             element={
               <BasicProtectedRoute>
                 <Layout>
                   <JobDetail />
+                </Layout>
+              </BasicProtectedRoute>
+            }
+          />
+          <Route
+            path="/invoice/:invoiceId"
+            element={
+              <BasicProtectedRoute>
+                <Layout>
+                  <InvoiceDetail />
                 </Layout>
               </BasicProtectedRoute>
             }
@@ -84,47 +73,6 @@ export default function App() {
             }
           />
           <Route
-            path="/invoice/:invoiceId"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <InvoiceDetail />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          {/* TopNavigation additional pages */}
-          <Route
-            path="/inbound"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Inbound />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/schedule"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Schedule />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/dispatch"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Dispatch />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
             path="/pricebook"
             element={
               <BasicProtectedRoute>
@@ -135,50 +83,17 @@ export default function App() {
             }
           />
           <Route
-            path="/automations"
+            path="/settings"
             element={
               <BasicProtectedRoute>
                 <Layout>
-                  <Automations />
+                  <Settings />
                 </Layout>
               </BasicProtectedRoute>
             }
           />
-          <Route
-            path="/accounting"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Accounting />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/payroll"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Payroll />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/api-test"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <ApiTest />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-
-          {/* Catch all route - redirect to home */}
-          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </FirebaseAuthProvider>
-    </Router>
+      </Router>
+    </FirebaseAuthProvider>
   );
 }

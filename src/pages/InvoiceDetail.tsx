@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Send, Download, Copy, Edit, Save, X, Plus, Trash2,
   FileText, Pen, Check, DollarSign, Package, Phone, Mail, User,
-  Tag, Paperclip, MessageSquare, Eye, Calculator, CreditCard
+  Tag, Paperclip, MessageSquare, Eye, Calculator, CreditCard,
+  MapPin, Calendar, AlertCircle, Building, Star, PaperclipIcon, Clock,
+  CheckCircle, Target, Activity, Wrench, Truck
 } from 'lucide-react';
 import { 
-  doc, getDoc, onSnapshot, updateDoc, addDoc, collection, query, where
+  doc, getDoc, onSnapshot, updateDoc, addDoc, collection, query, where, orderBy
 } from "firebase/firestore";
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import { db } from '../firebase';
+import { trackItemAccess } from '../utils/recentItemsTracker';
 
 // Helper functions
 const formatCurrency = (amount: number | undefined | null): string => `$${amount != null ? amount.toFixed(2) : '0.00'}`;
@@ -637,16 +640,35 @@ const InvoiceDetail = () => {
 
         const invoiceData = { id: invoiceDoc.id, ...invoiceDoc.data() };
         setInvoice(invoiceData);
+        
+        // Track invoice access
+        if (userId && tenantId) {
+          const invoiceTitle = (invoiceData as any).invoiceNumber || `Invoice ${invoiceData.id.slice(-6)}`;
+          const invoiceSubtitle = (invoiceData as any).customerName || 'Unknown Customer';
+          const invoiceDetails = `${(invoiceData as any).description || ''} • $${((invoiceData as any).total || 0).toFixed(2)}`;
+          
+          await trackItemAccess(
+            userId,
+            tenantId,
+            invoiceData.id,
+            'invoice',
+            invoiceTitle,
+            invoiceSubtitle,
+            invoiceDetails,
+            (invoiceData as any).status
+          );
+        }
+        
         setEditData({
-          summary: invoiceData.summary || '',
-          description: invoiceData.description || '',
-          services: invoiceData.services || [],
-          materials: invoiceData.materials || [],
-          payments: invoiceData.payments || [],
-          notes: invoiceData.notes || '',
-          tags: invoiceData.tags || [],
-          attachments: invoiceData.attachments || [],
-          taxRate: invoiceData.taxRate || 0
+          summary: (invoiceData as any).summary || '',
+          description: (invoiceData as any).description || '',
+          services: Array.isArray((invoiceData as any).services) ? (invoiceData as any).services : [],
+          materials: Array.isArray((invoiceData as any).materials) ? (invoiceData as any).materials : [],
+          payments: Array.isArray((invoiceData as any).payments) ? (invoiceData as any).payments : [],
+          notes: (invoiceData as any).notes || '',
+          tags: Array.isArray((invoiceData as any).tags) ? (invoiceData as any).tags : [],
+          attachments: Array.isArray((invoiceData as any).attachments) ? (invoiceData as any).attachments : [],
+          taxRate: (invoiceData as any).taxRate || 0
         });
 
         // Fetch business unit if specified
@@ -833,33 +855,54 @@ const InvoiceDetail = () => {
       const { jsPDF } = await import('jspdf');
       const html2canvas = await import('html2canvas');
       
+      // Switch to preview tab if not already there
+      const wasOnEditTab = activeTab === 'edit';
+      if (wasOnEditTab) {
+        setActiveTab('preview');
+        // Wait a bit for the tab to render
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
       // Get the preview content
       const element = document.querySelector('.invoice-preview');
       if (!element) {
-        alert('Unable to generate PDF. Please try again.');
+        alert('Unable to generate PDF. Please switch to Preview tab and try again.');
         return;
       }
 
-      // Convert to canvas
-      const canvas = await html2canvas.default(element, {
+      // Show loading state
+      const originalButton = document.querySelector('[data-pdf-button]') as HTMLButtonElement;
+      if (originalButton) {
+        originalButton.disabled = true;
+        originalButton.innerHTML = '<svg class="animate-spin h-4 w-4 mr-2 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating PDF...';
+      }
+
+      // Convert to canvas with better options
+      const canvas = await html2canvas.default(element as HTMLElement, {
         scale: 2,
         useCORS: true,
-        allowTaint: true
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        width: element.scrollWidth,
+        height: element.scrollHeight
       });
 
       // Create PDF
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       
-      const imgWidth = 210;
-      const pageHeight = 295;
+      const imgWidth = 210; // A4 width in mm
+      const pageHeight = 295; // A4 height in mm
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
       let heightLeft = imgHeight;
       let position = 0;
 
+      // Add first page
       pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
 
+      // Add additional pages if needed
       while (heightLeft >= 0) {
         position = heightLeft - imgHeight;
         pdf.addPage();
@@ -867,13 +910,33 @@ const InvoiceDetail = () => {
         heightLeft -= pageHeight;
       }
 
-      pdf.save(`Invoice_${invoice.invoiceNumber}.pdf`);
+      // Save the PDF
+      const fileName = `Invoice_${invoice.invoiceNumber || invoice.id.slice(-6)}_${new Date().toISOString().split('T')[0]}.pdf`;
+      pdf.save(fileName);
+      
+      // Switch back to edit tab if we changed it
+      if (wasOnEditTab) {
+        setActiveTab('edit');
+      }
+      
+      // Restore button state
+      if (originalButton) {
+        originalButton.disabled = false;
+        originalButton.innerHTML = '<svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>Export PDF';
+      }
+      
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Failed to generate PDF. Using print fallback.');
-      window.print();
+      alert('Failed to generate PDF. Please try again or use your browser\'s print function.');
+      
+      // Restore button state on error
+      const originalButton = document.querySelector('[data-pdf-button]') as HTMLButtonElement;
+      if (originalButton) {
+        originalButton.disabled = false;
+        originalButton.innerHTML = '<svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>Export PDF';
+      }
     }
-  }, [invoice]);
+  }, [invoice, activeTab]);
 
   const handleDuplicate = useCallback(async () => {
     if (!invoice || !db || !userId || !tenantId) return;
@@ -911,7 +974,9 @@ const InvoiceDetail = () => {
   totals.taxAmount = totals.subtotal * ((editData.taxRate || 0) / 100);
   totals.total = totals.subtotal + totals.taxAmount;
 
-  const totalPaid = (editData.payments || []).reduce((sum, payment) => sum + (payment.amount || 0), 0);
+  const totalPaid = Array.isArray(editData.payments) 
+    ? editData.payments.reduce((sum, payment) => sum + (payment.amount || 0), 0)
+    : 0;
   const balanceDue = totals.total - totalPaid;
 
   if (isLoading) {
@@ -975,7 +1040,8 @@ const InvoiceDetail = () => {
           <div className="flex items-center space-x-3">
             <button
               onClick={handleDownloadPDF}
-              className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/50 transition-colors"
+              data-pdf-button
+              className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download size={16} className="mr-2 inline" />
               Export PDF

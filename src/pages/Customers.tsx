@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { 
   User, Phone, Mail, MapPin, FileText, Plus, Search, Filter, Calendar, 
   MessageSquare, Star, MoreHorizontal, Clock, CheckCircle, FileCheck, X, 
@@ -6,7 +7,7 @@ import {
 } from 'lucide-react';
 import { auth as sharedAuth, db as sharedDb } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, query, where, onSnapshot, addDoc, setDoc, doc, updateDoc, deleteDoc, getFirestore } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, setDoc, doc, updateDoc, deleteDoc, getFirestore, getDocs, getDoc, limit, orderBy, serverTimestamp } from 'firebase/firestore';
 import CustomerDetailView from '../components/CustomerDetailView';
 import LocationDetailView from '../components/LocationDetailView';
 import TagInput from '../components/TagInput';
@@ -17,7 +18,10 @@ import EstimateImportModal from '../components/EstimateImportModal';
 import LocationImportModal from '../components/LocationImportModal';
 import { Menu } from '@headlessui/react';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
-import { useLocation } from 'react-router-dom';
+import CallButton from '../components/CallButton';
+import { trackItemAccess, getRecentItems } from '../utils/recentItemsTracker';
+
+// Use any type for flexibility with Firestore data
 
 // --- Helper Functions ---
 const getStatusColor = (status) => {
@@ -137,22 +141,22 @@ const CreateCustomerForm = ({ onCancel, onCreate }) => {
 const Customers = () => {
   const location = useLocation();
   const [view, setView] = useState('list');
-  const [customers, setCustomers] = useState([]);
-  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
-  const [selectedLocationId, setSelectedLocationId] = useState(null);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [recentCustomers, setRecentCustomers] = useState<any[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [db, setDb] = useState(sharedDb);
-  const [userId, setUserId] = useState(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [showCustomerImport, setShowCustomerImport] = useState(false);
   const [showJobImport, setShowJobImport] = useState(false);
   const [showInvoiceImport, setShowInvoiceImport] = useState(false);
   const [showEstimateImport, setShowEstimateImport] = useState(false);
   const [showLocationImport, setShowLocationImport] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const customersPerPage = 25;
   const [searchTerm, setSearchTerm] = useState('');
-  const [unsubscribeCustomers, setUnsubscribeCustomers] = useState(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [unsubscribeCustomers, setUnsubscribeCustomers] = useState<(() => void) | null>(null);
   const { tenantId } = useFirebaseAuth();
 
   // Handle navigation from global search
@@ -184,57 +188,153 @@ const Customers = () => {
     return () => unsub();
   }, []);
 
-  // Set up Firestore listener for customers
-  useEffect(() => {
-    if (!db || !userId || !tenantId) {
-      return;
-    }
-    const customerCollectionPath = `tenants/${tenantId}/customers`;
-    const q = query(
-      collection(db, customerCollectionPath),
-      where("userId", "==", userId)
-    );
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const customersData = [];
-      querySnapshot.forEach((doc) => {
-        const data = { id: doc.id, ...doc.data() };
-        
-        // Migration: Add locations array if missing but billingAddress exists
-        if (!Array.isArray(data.locations) && data.billingAddress) {
-          console.log('Migrating customer address to locations array:', data.name);
-          data.locations = [{
-            id: `loc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-            name: 'Primary Location',
-            address: data.billingAddress,
-            isPrimary: true,
-            phone: data.phone || '',
-          }];
-          
-          // Update the document in Firestore
-          updateDoc(doc.ref, { locations: data.locations }).catch(err => {
-            console.error('Error updating customer locations:', err);
-          });
+  // Load recent customers
+  const loadRecentCustomers = useCallback(async () => {
+    if (!userId || !tenantId) return;
+    
+    try {
+      const recentCustomerItems = await getRecentItems(userId, tenantId, 'customer');
+      
+      // Fetch full customer data for recents
+      const recentCustomerData: any[] = [];
+      for (const recent of recentCustomerItems) {
+        try {
+          // Get customer document directly by ID
+          const customerDocRef = doc(db, `tenants/${tenantId}/customers/${recent.id}`);
+          const customerSnap = await getDoc(customerDocRef);
+          if (customerSnap.exists()) {
+            recentCustomerData.push({ id: customerSnap.id, ...customerSnap.data() });
+          }
+        } catch (err) {
+          console.log('Could not fetch recent customer:', recent.id);
         }
-        
-        customersData.push(data);
-      });
-      setCustomers(customersData);
-    }, (firestoreError) => {
-      setError("Could not fetch customer data from Firestore: " + firestoreError.message);
-    });
-    setUnsubscribeCustomers(() => unsubscribe);
-    return () => unsubscribe();
+      }
+      setRecentCustomers(recentCustomerData);
+    } catch (error) {
+      console.error('Error loading recent customers:', error);
+    }
   }, [db, userId, tenantId]);
 
-  // Helper to pause/resume listener
-  const pauseCustomerListener = () => {
-    if (unsubscribeCustomers) unsubscribeCustomers();
-  };
-  const resumeCustomerListener = () => {
-    // Just trigger the useEffect by updating userId (or force re-mount if needed)
-    setUnsubscribeCustomers(null);
-    // The useEffect will re-subscribe automatically on next render
-  };
+  // Track customer access using shared utility
+  const trackCustomerAccess = useCallback(async (customerId: string, customerName: string, customerCompany?: string, customerEmail?: string, customerPhone?: string) => {
+    if (!userId || !tenantId) return;
+    
+    const subtitle = customerCompany || 'Customer';
+    const details = `${customerEmail || ''} • ${customerPhone || ''}`.replace(/^• |• $/, '');
+    
+    await trackItemAccess(
+      userId,
+      tenantId,
+      customerId,
+      'customer',
+      customerName,
+      subtitle,
+      details
+    );
+  }, [userId, tenantId]);
+
+  // Load initial customers (all customers, not limited)
+  const loadInitialCustomers = useCallback(async () => {
+    if (!db || !userId || !tenantId) return;
+    
+    try {
+      // Load all customers without limit
+      const customersQuery = query(
+        collection(db, `tenants/${tenantId}/customers`)
+      );
+      const customersSnap = await getDocs(customersQuery);
+      
+      const customersData: any[] = [];
+      customersSnap.docs.forEach(doc => {
+        customersData.push({ id: doc.id, ...doc.data() });
+      });
+      
+      setCustomers(customersData);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+    }
+  }, [db, userId, tenantId]);
+
+  // Debounced search
+  const performSearch = useCallback(async (term: string) => {
+    if (!db || !userId || !tenantId) return;
+    
+    setIsSearching(true);
+    try {
+      const searchResults: any[] = [];
+      const searchTerm = term.toLowerCase();
+      
+      const customersQuery = query(
+        collection(db, `tenants/${tenantId}/customers`),
+        where("userId", "==", userId),
+        limit(25)
+      );
+      
+      const customersSnap = await getDocs(customersQuery);
+      customersSnap.docs.forEach(doc => {
+        const customer = { id: doc.id, ...doc.data() } as any;
+        if (
+          customer.name?.toLowerCase().includes(searchTerm) ||
+          customer.email?.toLowerCase().includes(searchTerm) ||
+          customer.phone?.toLowerCase().includes(searchTerm) ||
+          customer.company?.toLowerCase().includes(searchTerm) ||
+          customer.tags?.some(tag => tag.toLowerCase().includes(searchTerm)) ||
+          customer.locations?.some(location => 
+            location.address?.toLowerCase().includes(searchTerm) ||
+            location.name?.toLowerCase().includes(searchTerm) ||
+            location.city?.toLowerCase().includes(searchTerm) ||
+            location.state?.toLowerCase().includes(searchTerm)
+          )
+        ) {
+          searchResults.push(customer);
+        }
+      });
+      
+      setCustomers(searchResults);
+    } catch (error) {
+      console.error('Error performing search:', error);
+      setError("Could not search customers: " + (error as Error).message);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [db, userId, tenantId]);
+
+  const handleCustomerClick = useCallback(async (customerId: string) => {
+    const customer = [...customers, ...recentCustomers].find(c => c.id === customerId);
+    if (customer && customer.name) {
+      await trackCustomerAccess(customerId, customer.name, customer.company, customer.email, customer.phone);
+      setSelectedCustomerId(customerId);
+      setView('detail');
+    }
+  }, [customers, recentCustomers, trackCustomerAccess]);
+
+  // Search effect with debouncing
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      // Load both recent customers and initial 25 customers
+      loadRecentCustomers();
+      loadInitialCustomers();
+      return;
+    }
+    
+    const timeoutId = setTimeout(() => {
+      performSearch(searchTerm);
+    }, 300);
+    
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, performSearch, loadRecentCustomers, loadInitialCustomers]);
+
+  // Load initial data on mount
+  useEffect(() => {
+    if (db && userId && tenantId) {
+      loadRecentCustomers();
+      loadInitialCustomers();
+    }
+  }, [db, userId, tenantId, loadRecentCustomers, loadInitialCustomers]);
+
+  // Note: Removed real-time listener in favor of on-demand loading for better performance
+
+  // Note: Removed pause/resume listener functions as we're using on-demand loading
 
   const handleCreateCustomer = useCallback(async (newCustomerData) => { 
     console.log('➕ Creating customer:', newCustomerData);
@@ -317,12 +417,6 @@ const Customers = () => {
     } 
   }, [db, userId, tenantId]);
 
-  const handleCustomerClick = (customerId) => { 
-    setSelectedCustomerId(customerId); 
-    setSelectedLocationId(null);
-    setView('detail'); 
-  };
-
   const handleLocationClick = (location) => {
     setSelectedLocationId(location.id);
     setView('location');
@@ -339,47 +433,13 @@ const Customers = () => {
     setSelectedLocationId(null);
   };
   
-  // Filter customers by current user and search term
-  const userCustomers = customers.filter(customer => {
-    if (customer.userId !== userId) return false;
-    
-    if (!searchTerm.trim()) return true;
-    
-    const term = searchTerm.toLowerCase();
-    return (
-      customer.name?.toLowerCase().includes(term) ||
-      customer.email?.toLowerCase().includes(term) ||
-      customer.phone?.toLowerCase().includes(term) ||
-      customer.company?.toLowerCase().includes(term) ||
-      customer.tags?.some(tag => tag.toLowerCase().includes(term)) ||
-      customer.locations?.some(location => 
-        location.address?.toLowerCase().includes(term) ||
-        location.name?.toLowerCase().includes(term) ||
-        location.city?.toLowerCase().includes(term) ||
-        location.state?.toLowerCase().includes(term)
-      )
-    );
-  });
-  const customerData = selectedCustomerId ? userCustomers.find(c => c.id === selectedCustomerId) : null;
+  // Get customer data for display
+  const displayCustomers = searchTerm.trim() ? customers : customers.slice(0, 25);
+  const showingRecents = !searchTerm.trim() && recentCustomers.length > 0;
+  const allCustomers = [...customers, ...recentCustomers];
+  const customerData = selectedCustomerId ? allCustomers.find(c => c.id === selectedCustomerId) : null;
   const locationData = selectedLocationId && customerData ? 
     customerData.locations?.find(l => l.id === selectedLocationId) : null;
-  
-  // Pagination logic
-  const totalPages = Math.ceil(userCustomers.length / customersPerPage);
-  const paginatedCustomers = userCustomers.slice((currentPage - 1) * customersPerPage, currentPage * customersPerPage);
-  
-  // Pagination window logic (show max 20 pages at a time)
-  const maxPageButtons = 20;
-  let startPage = Math.max(1, currentPage - Math.floor(maxPageButtons / 2));
-  let endPage = startPage + maxPageButtons - 1;
-  if (endPage > totalPages) {
-    endPage = totalPages;
-    startPage = Math.max(1, endPage - maxPageButtons + 1);
-  }
-  const pageNumbers = [];
-  for (let i = startPage; i <= endPage; i++) {
-    pageNumbers.push(i);
-  }
   
   if (isLoading) {
     return <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-slate-900"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div><p className="ml-4 text-gray-600 dark:text-gray-300">Connecting to database...</p></div>;
@@ -415,12 +475,12 @@ const Customers = () => {
           customer={customerData}
           onBack={handleBackToCustomer}
           onUpdate={handleUpdateCustomer}
-          onDelete={(locationId) => {
+          onDelete={async (locationId) => {
             const updatedCustomer = {
               ...customerData,
               locations: customerData.locations.filter(loc => loc.id !== locationId)
             };
-            handleUpdateCustomer(updatedCustomer);
+            await handleUpdateCustomer(updatedCustomer);
             handleBackToCustomer();
           }}
         />
@@ -437,7 +497,9 @@ const Customers = () => {
           <div className="flex justify-between items-center mb-6">
             <div>
               <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Customers</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">{userCustomers.length} records</p>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">
+                {recentCustomers.length > 0 ? `${recentCustomers.length} recent customers` : `${customers.length} search results`}
+              </p>
             </div>
             <div className="flex items-center space-x-2">
               <div className="relative">
@@ -446,10 +508,7 @@ const Customers = () => {
                   type="text" 
                   placeholder="Search customers..." 
                   value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1); // Reset to first page when searching
-                  }}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-slate-600" 
                 />
               </div>
@@ -524,107 +583,94 @@ const Customers = () => {
               </Menu.Items>
             </Menu>
           </div>
+          {isSearching && (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              <span className="ml-2 text-gray-600 dark:text-gray-300">Searching...</span>
+            </div>
+          )}
+          {showingRecents && (
+            <div className="flex items-center gap-2 mb-4 text-sm text-gray-600 dark:text-gray-400">
+              <Clock size={16} />
+              <span>Recently accessed customers</span>
+            </div>
+          )}
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border overflow-hidden border-gray-200 dark:border-slate-700">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
-                <thead className="bg-gray-50 dark:bg-slate-700">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Display Name</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Address</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Mobile</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Email</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Tags</th>
-                    <th className="relative px-6 py-3">
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
-                  {paginatedCustomers.map(customer => (
-                    <tr key={customer.id} onClick={() => handleCustomerClick(customer.id)} className="hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-blue-600 dark:text-blue-400">{customer.name}</div>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(customer.status)}`}>
-                          {getCustomerTypeLabel(customer.status)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
-                        {Array.isArray(customer.locations) ? customer.locations.find(l=>l.isPrimary)?.address : 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{customer.phone}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{customer.email}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex flex-wrap gap-1">
-                          {customer.tags?.map(tag => 
-                            <span key={tag} className="px-2 py-0.5 text-xs rounded-full bg-gray-200 text-gray-800 dark:bg-slate-600 dark:text-gray-200">{tag}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button onClick={(e) => { e.stopPropagation(); }} className="text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 p-1">
-                          <MoreHorizontal size={18} />
-                        </button>
-                      </td>
+              <div className="max-h-[600px] overflow-y-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+                  <thead className="bg-gray-50 dark:bg-slate-700 sticky top-0">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Display Name</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Address</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Mobile</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Email</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Tags</th>
+                      <th className="relative px-6 py-3">
+                        <span className="sr-only">Actions</span>
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
+                    {displayCustomers.map(customer => (
+                      <tr key={customer.id} onClick={() => handleCustomerClick(customer.id)} className="hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-blue-600 dark:text-blue-400">{customer.name}</div>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(customer.status)}`}>
+                            {getCustomerTypeLabel(customer.status)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
+                          {Array.isArray(customer.locations) ? customer.locations.find(l=>l.isPrimary)?.address : 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
+                          <div className="flex items-center gap-2">
+                            <span>{customer.phone}</span>
+                            {customer.phone && (
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <CallButton
+                                  phoneNumber={customer.phone}
+                                  customerName={customer.name}
+                                  customerId={customer.id}
+                                  variant="icon"
+                                  size="sm"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{customer.email}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex flex-wrap gap-1">
+                            {customer.tags?.map(tag => 
+                              <span key={tag} className="px-2 py-0.5 text-xs rounded-full bg-gray-200 text-gray-800 dark:bg-slate-600 dark:text-gray-200">{tag}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button onClick={(e) => { e.stopPropagation(); }} className="text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 p-1">
+                            <MoreHorizontal size={18} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-          {/* Pagination controls */}
-          {totalPages > 1 && (
-            <div className="flex justify-center items-center mt-6 space-x-1">
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - maxPageButtons))}
-                disabled={startPage === 1}
-                className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 disabled:opacity-50"
-                aria-label="Previous page range"
-              >
-                &#8592;
-              </button>
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 disabled:opacity-50"
-                aria-label="Previous page"
-              >
-                &lt;
-              </button>
-              {pageNumbers.map(page => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={`px-3 py-1 rounded border border-gray-300 dark:border-slate-600 ${currentPage === page ? 'bg-blue-600 text-white' : 'bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200'}`}
-                >
-                  {page}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 disabled:opacity-50"
-                aria-label="Next page"
-              >
-                &gt;
-              </button>
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + maxPageButtons))}
-                disabled={endPage === totalPages}
-                className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 disabled:opacity-50"
-                aria-label="Next page range"
-              >
-                &#8594;
-              </button>
+          {!isSearching && displayCustomers.length === 0 && (
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              {searchTerm.trim() ? 'No customers found matching your search.' : 'No recent customers. Start by creating or viewing customers.'}
             </div>
           )}
           {showCustomerImport && (
             <CustomerImportModal
               isOpen={showCustomerImport}
               onClose={() => setShowCustomerImport(false)}
-              onComplete={() => { resumeCustomerListener(); }}
+              onComplete={() => { loadInitialCustomers(); }}
               userId={userId}
               tenantId={tenantId}
-              pauseListener={pauseCustomerListener}
             />
           )}
           {showJobImport && (

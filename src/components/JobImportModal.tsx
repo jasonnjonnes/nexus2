@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { collection, doc, getDoc, setDoc, updateDoc, arrayUnion, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
+import { processImportedBusinessUnitsAndJobTypes } from '../utils/businessUnitsJobTypes';
 
 interface JobImportModalProps {
   isOpen: boolean;
@@ -113,6 +114,16 @@ const JobImportModal: React.FC<JobImportModalProps> = ({ isOpen, onClose, onComp
     setErrors([]);
     setCurrentImportIndex(0);
     let success = 0, fail = 0;
+
+    // First, process business units and job types from import data
+    try {
+      console.log('🔧 Processing business units and job types from import data...');
+      await processImportedBusinessUnitsAndJobTypes(tenantId, userId, rows);
+      console.log('✅ Successfully processed business units and job types');
+    } catch (error) {
+      console.error('❌ Error processing business units and job types:', error);
+      setErrors(prev => [...prev, `Error creating business units/job types: ${error}`]);
+    }
 
     // Constants for optimization - REDUCED to avoid Firebase write limits
     const MAX_BATCH_SIZE = 100; // Significantly reduced from 450

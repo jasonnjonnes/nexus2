@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   Search, X, FileText, Users, MapPin, Phone, MessageSquare, 
-  DollarSign, ShoppingCart, Calendar, Mail, User, Wrench
+  DollarSign, ShoppingCart, Calendar, Mail, User, Wrench, Clock
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, query, where, limit, orderBy, getDocs, doc, updateDoc, getDoc, setDoc } from 'firebase/firestore';
+import { trackItemAccess, getRecentItems } from '../utils/recentItemsTracker';
 
 interface SearchResult {
   id: string;
@@ -18,11 +19,23 @@ interface SearchResult {
   customerId?: string;
   locationId?: string;
   jobId?: string;
+  lastAccessed?: Date;
 }
 
 interface GlobalSearchProps {
   isOpen: boolean;
   onClose: () => void;
+}
+
+interface RecentItem {
+  id: string;
+  type: string;
+  title: string;
+  subtitle: string;
+  details: string;
+  metadata?: string;
+  lastAccessed: Date;
+  accessCount: number;
 }
 
 const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
@@ -34,16 +47,12 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [isLoading, setIsLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
   
   // Firebase state
   const { user, tenantId } = useFirebaseAuth();
   const userId = user?.uid || null;
-  
-  // Data state
-  const [customers, setCustomers] = useState([]);
-  const [jobs, setJobs] = useState([]);
-  const [invoices, setInvoices] = useState([]);
-  const [estimates, setEstimates] = useState([]);
 
   // Filter options
   const filterOptions = [
@@ -58,81 +67,315 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
     { value: 'purchase_orders', label: 'Purchase Orders', icon: ShoppingCart },
   ];
 
-  // Load data from Firebase
+  // Load recent items from Firestore
   useEffect(() => {
-    if (!db || !userId || !tenantId) return;
-
-    const unsubscribes = [];
-
-    // Load customers
-    const customersQuery = query(
-      collection(db, 'tenants', tenantId, 'customers'),
-      where("userId", "==", userId)
-    );
-    unsubscribes.push(onSnapshot(customersQuery, (querySnapshot) => {
-      const customersData = [];
-      querySnapshot.forEach((doc) => {
-        customersData.push({ id: doc.id, ...doc.data() });
-      });
-      console.log('GlobalSearch - Loaded customers:', customersData.length);
-      setCustomers(customersData);
-    }));
-
-    // Load jobs
-    const jobsQuery = query(
-      collection(db, 'tenants', tenantId, 'jobs'),
-      where("userId", "==", userId)
-    );
-    unsubscribes.push(onSnapshot(jobsQuery, (querySnapshot) => {
-      const jobsData = [];
-      querySnapshot.forEach((doc) => {
-        jobsData.push({ id: doc.id, ...doc.data() });
-      });
-      console.log('GlobalSearch - Loaded jobs:', jobsData.length);
-      setJobs(jobsData);
-    }));
-
-    // Load invoices
-    const invoicesQuery = query(
-      collection(db, 'tenants', tenantId, 'invoices'),
-      where("userId", "==", userId)
-    );
-    unsubscribes.push(onSnapshot(invoicesQuery, (querySnapshot) => {
-      const invoicesData = [];
-      querySnapshot.forEach((doc) => {
-        invoicesData.push({ id: doc.id, ...doc.data() });
-      });
-      console.log('GlobalSearch - Loaded invoices:', invoicesData.length);
-      setInvoices(invoicesData);
-    }));
-
-    // Load estimates
-    const estimatesQuery = query(
-      collection(db, 'tenants', tenantId, 'estimates'),
-      where("userId", "==", userId)
-    );
-    unsubscribes.push(onSnapshot(estimatesQuery, (querySnapshot) => {
-      const estimatesData = [];
-      querySnapshot.forEach((doc) => {
-        estimatesData.push({ id: doc.id, ...doc.data() });
-      });
-      console.log('GlobalSearch - Loaded estimates:', estimatesData.length);
-      setEstimates(estimatesData);
-    }));
-
-    return () => {
-      unsubscribes.forEach(unsubscribe => unsubscribe());
+    const loadRecentItems = async () => {
+      if (!userId || !tenantId) return;
+      
+      try {
+        const items = await getRecentItems(userId, tenantId);
+        const formattedItems = items.map(item => ({
+          ...item,
+          lastAccessed: new Date(item.lastAccessed)
+        }));
+        setRecentItems(formattedItems);
+      } catch (error) {
+        console.error('Error loading recent items:', error);
+      }
     };
-  }, [db, userId, tenantId]);
 
-  // Focus input when opened
+    if (isOpen) {
+      loadRecentItems();
+    }
+  }, [isOpen, userId, tenantId]);
+
+  // Add item to recents using shared utility
+  const addToRecents = useCallback((result: SearchResult) => {
+    if (!userId || !tenantId) return;
+    
+    trackItemAccess(
+      userId,
+      tenantId,
+      result.id,
+      result.type as any,
+      result.title,
+      result.subtitle,
+      result.details,
+      result.metadata
+    );
+
+    // Update local state immediately for better UX
+    const newItem: RecentItem = {
+      id: result.id,
+      type: result.type,
+      title: result.title,
+      subtitle: result.subtitle,
+      details: result.details,
+      metadata: result.metadata,
+      lastAccessed: new Date(),
+      accessCount: 1
+    };
+
+    setRecentItems(prev => {
+      const existing = prev.find(item => item.id === result.id && item.type === result.type);
+      let updated;
+      
+      if (existing) {
+        // Update existing item
+        updated = prev.map(item => 
+          item.id === result.id && item.type === result.type
+            ? { ...item, lastAccessed: new Date(), accessCount: item.accessCount + 1 }
+            : item
+        );
+      } else {
+        // Add new item
+        updated = [newItem, ...prev];
+      }
+      
+      // Keep only the 25 most recent items
+      updated = updated
+        .sort((a, b) => b.lastAccessed.getTime() - a.lastAccessed.getTime())
+        .slice(0, 25);
+      
+      return updated;
+    });
+  }, [userId, tenantId]);
+
+  // Debounced search function
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (searchTerm.trim()) {
+        performSearch(searchTerm.trim());
+      } else {
+        setSearchResults([]);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, selectedFilter, tenantId]);
+
+  // Perform actual search
+  const performSearch = async (term: string) => {
+    if (!tenantId) return;
+    
+    setIsLoading(true);
+    const results: SearchResult[] = [];
+    const searchTerm = term.toLowerCase();
+
+    try {
+      // Search customers using Firestore queries
+      if (selectedFilter === 'all' || selectedFilter === 'customers') {
+        try {
+          // Search by name
+          const nameQuery = query(
+            collection(db, `tenants/${tenantId}/customers`),
+            where('name', '>=', searchTerm),
+            where('name', '<=', searchTerm + '\uf8ff'),
+            limit(10)
+          );
+          
+          // Search by email
+          const emailQuery = query(
+            collection(db, `tenants/${tenantId}/customers`),
+            where('email', '>=', searchTerm),
+            where('email', '<=', searchTerm + '\uf8ff'),
+            limit(10)
+          );
+          
+          // Search by company
+          const companyQuery = query(
+            collection(db, `tenants/${tenantId}/customers`),
+            where('company', '>=', searchTerm),
+            where('company', '<=', searchTerm + '\uf8ff'),
+            limit(10)
+          );
+
+          const [nameSnap, emailSnap, companySnap] = await Promise.all([
+            getDocs(nameQuery),
+            getDocs(emailQuery),
+            getDocs(companyQuery)
+          ]);
+
+          const customerIds = new Set();
+          [nameSnap, emailSnap, companySnap].forEach(snap => {
+            snap.docs.forEach(doc => {
+              if (!customerIds.has(doc.id)) {
+                customerIds.add(doc.id);
+                const customer = { id: doc.id, ...doc.data() };
+                results.push({
+                  id: customer.id,
+                  type: 'customer',
+                  title: customer.name,
+                  subtitle: customer.company || 'Customer',
+                  details: `${customer.email || ''} • ${customer.phone || ''}`.replace(/^• |• $/, ''),
+                  metadata: customer.status
+                });
+              }
+            });
+          });
+        } catch (error) {
+          console.error('Error searching customers:', error);
+        }
+      }
+
+      // Search jobs using Firestore queries
+      if (selectedFilter === 'all' || selectedFilter === 'jobs') {
+        try {
+          // Search by customer name
+          const customerNameQuery = query(
+            collection(db, `tenants/${tenantId}/jobs`),
+            where('customerName', '>=', searchTerm),
+            where('customerName', '<=', searchTerm + '\uf8ff'),
+            limit(10)
+          );
+          
+          // Search by description
+          const descriptionQuery = query(
+            collection(db, `tenants/${tenantId}/jobs`),
+            where('description', '>=', searchTerm),
+            where('description', '<=', searchTerm + '\uf8ff'),
+            limit(10)
+          );
+
+          const [customerNameSnap, descriptionSnap] = await Promise.all([
+            getDocs(customerNameQuery),
+            getDocs(descriptionQuery)
+          ]);
+
+          const jobIds = new Set();
+          [customerNameSnap, descriptionSnap].forEach(snap => {
+            snap.docs.forEach(doc => {
+              if (!jobIds.has(doc.id)) {
+                jobIds.add(doc.id);
+                const job = { id: doc.id, ...doc.data() };
+                results.push({
+                  id: job.id,
+                  type: 'job',
+                  title: job.jobNumber ? `Job ${job.jobNumber}` : `Job ${job.id.slice(-6)}`,
+                  subtitle: job.jobType || 'Service Call',
+                  details: `${job.customerName || 'Unknown Customer'} • ${job.technician || 'Unassigned'}`,
+                  metadata: job.status,
+                  jobId: job.id,
+                  customerId: job.customerId
+                });
+              }
+            });
+          });
+        } catch (error) {
+          console.error('Error searching jobs:', error);
+        }
+      }
+
+      // Search invoices using Firestore queries
+      if (selectedFilter === 'all' || selectedFilter === 'invoices') {
+        try {
+          // Search by customer name
+          const customerNameQuery = query(
+            collection(db, `tenants/${tenantId}/invoices`),
+            where('customerName', '>=', searchTerm),
+            where('customerName', '<=', searchTerm + '\uf8ff'),
+            limit(10)
+          );
+          
+          // Search by description
+          const descriptionQuery = query(
+            collection(db, `tenants/${tenantId}/invoices`),
+            where('description', '>=', searchTerm),
+            where('description', '<=', searchTerm + '\uf8ff'),
+            limit(10)
+          );
+
+          const [customerNameSnap, descriptionSnap] = await Promise.all([
+            getDocs(customerNameQuery),
+            getDocs(descriptionQuery)
+          ]);
+
+          const invoiceIds = new Set();
+          [customerNameSnap, descriptionSnap].forEach(snap => {
+            snap.docs.forEach(doc => {
+              if (!invoiceIds.has(doc.id)) {
+                invoiceIds.add(doc.id);
+                const invoice = { id: doc.id, ...doc.data() };
+                results.push({
+                  id: invoice.id,
+                  type: 'invoice',
+                  title: invoice.invoiceNumber || `Invoice ${invoice.id.slice(-6)}`,
+                  subtitle: invoice.customerName || 'Unknown Customer',
+                  details: `${invoice.description || ''} • $${(invoice.total || 0).toFixed(2)}`,
+                  metadata: invoice.status,
+                  customerId: invoice.customerId
+                });
+              }
+            });
+          });
+        } catch (error) {
+          console.error('Error searching invoices:', error);
+        }
+      }
+
+      // Search estimates using Firestore queries
+      if (selectedFilter === 'all' || selectedFilter === 'estimates') {
+        try {
+          // Search by customer name
+          const customerNameQuery = query(
+            collection(db, `tenants/${tenantId}/estimates`),
+            where('customerName', '>=', searchTerm),
+            where('customerName', '<=', searchTerm + '\uf8ff'),
+            limit(10)
+          );
+          
+          // Search by description
+          const descriptionQuery = query(
+            collection(db, `tenants/${tenantId}/estimates`),
+            where('description', '>=', searchTerm),
+            where('description', '<=', searchTerm + '\uf8ff'),
+            limit(10)
+          );
+
+          const [customerNameSnap, descriptionSnap] = await Promise.all([
+            getDocs(customerNameQuery),
+            getDocs(descriptionQuery)
+          ]);
+
+          const estimateIds = new Set();
+          [customerNameSnap, descriptionSnap].forEach(snap => {
+            snap.docs.forEach(doc => {
+              if (!estimateIds.has(doc.id)) {
+                estimateIds.add(doc.id);
+                const estimate = { id: doc.id, ...doc.data() };
+                results.push({
+                  id: estimate.id,
+                  type: 'estimate',
+                  title: estimate.estimateNumber || `Estimate ${estimate.id.slice(-6)}`,
+                  subtitle: estimate.customerName || 'Unknown Customer',
+                  details: `${estimate.description || ''} • $${(estimate.total || 0).toFixed(2)}`,
+                  metadata: estimate.status,
+                  customerId: estimate.customerId
+                });
+              }
+            });
+          });
+        } catch (error) {
+          console.error('Error searching estimates:', error);
+        }
+      }
+
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Search error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Focus input when modal opens
   useEffect(() => {
     if (isOpen && inputRef.current) {
       inputRef.current.focus();
     }
   }, [isOpen]);
 
-  // Close on outside click
+  // Handle clicks outside modal
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
@@ -146,313 +389,16 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
     }
   }, [isOpen, onClose]);
 
-  // Search function
-  const searchResults = useMemo(() => {
-    if (!searchTerm.trim()) return [];
-
-    const term = searchTerm.toLowerCase();
-    const results: SearchResult[] = [];
-    
-    console.log('GlobalSearch - Searching for:', term);
-    console.log('Available data:', { 
-      customers: customers.length, 
-      jobs: jobs.length, 
-      invoices: invoices.length, 
-      estimates: estimates.length 
-    });
-
-    // Helper function to check if text matches search term
-    const matches = (text: string) => text?.toLowerCase().includes(term);
-
-    // Search customers
-    if (selectedFilter === 'all' || selectedFilter === 'customers') {
-      customers.forEach(customer => {
-        if (
-          matches(customer.name) ||
-          matches(customer.email) ||
-          matches(customer.phone) ||
-          matches(customer.company)
-        ) {
-          results.push({
-            id: customer.id,
-            type: 'customer',
-            title: customer.name,
-            subtitle: customer.company ? `${customer.company}` : 'Customer',
-            details: `${customer.email || ''} • ${customer.phone || ''}`.replace(/^• |• $/, ''),
-            metadata: customer.status ? customer.status.charAt(0).toUpperCase() + customer.status.slice(1) : undefined
-          });
-        }
-      });
-    }
-
-    // Search locations (from customer locations)
-    if (selectedFilter === 'all' || selectedFilter === 'locations') {
-      customers.forEach(customer => {
-        if (customer.locations && Array.isArray(customer.locations)) {
-          customer.locations.forEach(location => {
-            if (
-              matches(location.name) ||
-              matches(location.address) ||
-              matches(location.street) ||
-              matches(location.city) ||
-              matches(location.state) ||
-              matches(location.zip) ||
-              matches(location.phone) ||
-              matches(location.contactPerson)
-            ) {
-              const address = location.address || 
-                [location.street, location.city, location.state, location.zip].filter(Boolean).join(', ');
-              
-              results.push({
-                id: location.id,
-                type: 'location',
-                title: location.name,
-                subtitle: customer.name,
-                details: address,
-                metadata: location.phone,
-                customerId: customer.id,
-                locationId: location.id
-              });
-            }
-          });
-        }
-      });
-    }
-
-    // Search jobs
-    if (selectedFilter === 'all' || selectedFilter === 'jobs') {
-      jobs.forEach(job => {
-        let matchesJob = false;
-        
-        // Search job-specific fields
-        if (
-          matches(job.jobNumber) ||
-          matches(job.jobType) ||
-          matches(job.description) ||
-          matches(job.summary) ||
-          matches(job.customerName) ||
-          matches(job.technician) ||
-          matches(job.status) ||
-          matches(job.priority) ||
-          matches(job.notes)
-        ) {
-          matchesJob = true;
-        }
-        
-        // Search by customer information if job has customerId
-        if (!matchesJob && job.customerId) {
-          const customer = customers.find(c => c.id === job.customerId);
-          if (customer) {
-            const customerMatches = 
-              matches(customer.name) ||
-              matches(customer.email) ||
-              matches(customer.phone) ||
-              matches(customer.company) ||
-              customer.tags?.some(tag => matches(tag));
-              
-            const locationMatches = customer.locations?.some(location => 
-              matches(location.address) ||
-              matches(location.name) ||
-              matches(location.city) ||
-              matches(location.state) ||
-              matches(location.zip) ||
-              matches(location.phone) ||
-              matches(location.contactPerson)
-            );
-            
-            if (customerMatches || locationMatches) {
-              console.log(`Job ${job.jobNumber || job.id} matched via customer:`, {
-                customerName: customer.name,
-                customerMatches,
-                locationMatches,
-                searchTerm: term
-              });
-              matchesJob = true;
-            }
-          }
-        }
-        
-        if (matchesJob) {
-          // Get customer info for display
-          const customer = job.customerId ? customers.find(c => c.id === job.customerId) : null;
-          const customerName = customer?.name || job.customerName || 'Unknown Customer';
-          
-          results.push({
-            id: job.id,
-            type: 'job',
-            title: job.jobNumber ? `Job ${job.jobNumber}` : `Job ${job.id.slice(-6)}`,
-            subtitle: job.jobType || 'Service Call',
-            details: `${customerName} • ${job.technician || 'Unassigned'}`,
-            metadata: job.status ? job.status.replace('_', ' ').charAt(0).toUpperCase() + job.status.slice(1) : undefined,
-            jobId: job.id,
-            customerId: job.customerId
-          });
-        }
-      });
-    }
-
-    // Search invoices
-    if (selectedFilter === 'all' || selectedFilter === 'invoices') {
-      invoices.forEach(invoice => {
-        let matchesInvoice = false;
-        
-        // Search invoice-specific fields
-        if (
-          matches(invoice.invoiceNumber) ||
-          matches(invoice.customerName) ||
-          matches(invoice.description) ||
-          matches(invoice.summary) ||
-          matches(invoice.jobNumber) ||
-          matches(invoice.status) ||
-          matches(invoice.notes) ||
-          matches(invoice.poNumber)
-        ) {
-          matchesInvoice = true;
-        }
-        
-        // Search by customer information if invoice has customerId
-        if (!matchesInvoice && invoice.customerId) {
-          const customer = customers.find(c => c.id === invoice.customerId);
-          if (customer) {
-            if (
-              matches(customer.name) ||
-              matches(customer.email) ||
-              matches(customer.phone) ||
-              matches(customer.company) ||
-              customer.tags?.some(tag => matches(tag)) ||
-              customer.locations?.some(location => 
-                matches(location.address) ||
-                matches(location.name) ||
-                matches(location.city) ||
-                matches(location.state) ||
-                matches(location.zip) ||
-                matches(location.phone) ||
-                matches(location.contactPerson)
-              )
-            ) {
-              matchesInvoice = true;
-            }
-          }
-        }
-        
-        if (matchesInvoice) {
-          // Get customer info for display
-          const customer = invoice.customerId ? customers.find(c => c.id === invoice.customerId) : null;
-          const customerName = customer?.name || invoice.customerName || 'Unknown Customer';
-          
-          results.push({
-            id: invoice.id,
-            type: 'invoice',
-            title: invoice.invoiceNumber || `Invoice ${invoice.id.slice(-6)}`,
-            subtitle: customerName,
-            details: `${invoice.summary || invoice.description || ''} • $${(invoice.total || 0).toFixed(2)}`,
-            metadata: invoice.status ? invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1) : undefined,
-            customerId: invoice.customerId
-          });
-        }
-      });
-    }
-
-    // Search estimates
-    if (selectedFilter === 'all' || selectedFilter === 'estimates') {
-      estimates.forEach(estimate => {
-        let matchesEstimate = false;
-        
-        // Search estimate-specific fields
-        if (
-          matches(estimate.estimateNumber) ||
-          matches(estimate.customerName) ||
-          matches(estimate.description) ||
-          matches(estimate.summary) ||
-          matches(estimate.jobNumber) ||
-          matches(estimate.status) ||
-          matches(estimate.notes) ||
-          matches(estimate.title) ||
-          matches(estimate.workDescription)
-        ) {
-          matchesEstimate = true;
-        }
-        
-        // Search by customer information if estimate has customerId
-        if (!matchesEstimate && estimate.customerId) {
-          const customer = customers.find(c => c.id === estimate.customerId);
-          if (customer) {
-            if (
-              matches(customer.name) ||
-              matches(customer.email) ||
-              matches(customer.phone) ||
-              matches(customer.company) ||
-              customer.tags?.some(tag => matches(tag)) ||
-              customer.locations?.some(location => 
-                matches(location.address) ||
-                matches(location.name) ||
-                matches(location.city) ||
-                matches(location.state) ||
-                matches(location.zip) ||
-                matches(location.phone) ||
-                matches(location.contactPerson)
-              )
-            ) {
-              matchesEstimate = true;
-            }
-          }
-        }
-        
-        if (matchesEstimate) {
-          // Get customer info for display
-          const customer = estimate.customerId ? customers.find(c => c.id === estimate.customerId) : null;
-          const customerName = customer?.name || estimate.customerName || 'Unknown Customer';
-          
-          results.push({
-            id: estimate.id,
-            type: 'estimate',
-            title: estimate.estimateNumber || estimate.title || `Estimate ${estimate.id.slice(-6)}`,
-            subtitle: customerName,
-            details: `${estimate.summary || estimate.description || estimate.workDescription || ''} • $${(estimate.total || 0).toFixed(2)}`,
-            metadata: estimate.status ? estimate.status.charAt(0).toUpperCase() + estimate.status.slice(1) : undefined,
-            customerId: estimate.customerId
-          });
-        }
-      });
-    }
-
-    // Placeholder data for calls, SMS, and purchase orders
-    if (selectedFilter === 'all' || selectedFilter === 'calls') {
-      if (matches('inbound') || matches('call') || term.includes('9524')) {
-        results.push({
-          id: 'call-1',
-          type: 'call',
-          title: '9s - Inbound',
-          subtitle: 'Incoming Call',
-          details: 'Caller: (530) 730-0372 • Number Dialed: (469) 666-1934',
-          metadata: '06/09/2025, 5:17 PM'
-        });
-      }
-    }
-
-    if (selectedFilter === 'all' || selectedFilter === 'sms') {
-      if (matches('technician') || matches('jeremy') || term.includes('9524')) {
-        results.push({
-          id: 'sms-1',
-          type: 'sms',
-          title: 'SMS Message',
-          subtitle: 'Thomas Magelssen',
-          details: 'Hi, your technician Jeremy Skinner from Evolution Plumbing LLC is on the way...',
-          metadata: 'To: (281) 222-9832 • 12/10/2024, 10:28 AM'
-        });
-      }
-    }
-
-    if (selectedFilter === 'all' || selectedFilter === 'purchase_orders') {
-      // Placeholder - no data yet
-    }
-
-    return results;
-  }, [searchTerm, selectedFilter, customers, jobs, invoices, estimates]);
+  // Get recent items by type
+  const getRecentsByType = (type: string) => {
+    return recentItems
+      .filter(item => type === 'all' || item.type === type)
+      .slice(0, 5);
+  };
 
   // Group results by type
   const groupedResults = useMemo(() => {
-    const groups = {};
+    const groups: { [key: string]: SearchResult[] } = {};
     searchResults.forEach(result => {
       if (!groups[result.type]) {
         groups[result.type] = [];
@@ -464,13 +410,13 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
 
   // Handle result click
   const handleResultClick = (result: SearchResult) => {
+    addToRecents(result);
+    
     switch (result.type) {
       case 'customer':
-        // Navigate to customers page with customer selected
         navigate(`/customers`, { state: { selectedCustomerId: result.id } });
         break;
       case 'location':
-        // Navigate to customers page with location selected
         navigate(`/customers`, { state: { selectedCustomerId: result.customerId, selectedLocationId: result.locationId } });
         break;
       case 'job':
@@ -521,6 +467,9 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
+  const showingRecents = searchTerm.trim() === '';
+  const recentsToShow = showingRecents ? getRecentsByType(selectedFilter) : [];
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center pt-20">
       <div ref={searchRef} className="w-full max-w-3xl bg-white dark:bg-slate-800 rounded-lg shadow-2xl max-h-[80vh] flex flex-col">
@@ -562,11 +511,74 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
 
         {/* Search Results */}
         <div className="flex-1 overflow-y-auto">
-          {searchTerm.trim() === '' ? (
+          {showingRecents ? (
+            <div className="p-4">
+              {recentsToShow.length > 0 ? (
+                <div>
+                  <div className="flex items-center mb-4">
+                    <Clock size={16} className="mr-2 text-gray-500 dark:text-gray-400" />
+                    <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                      Recent {selectedFilter === 'all' ? 'Items' : getTypeDisplayName(selectedFilter)}
+                    </h3>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    {recentsToShow.map((item) => {
+                      const ResultIcon = getResultIcon(item.type);
+                      
+                      return (
+                        <div
+                          key={`${item.type}-${item.id}`}
+                          onClick={() => handleResultClick({
+                            id: item.id,
+                            type: item.type as any,
+                            title: item.title,
+                            subtitle: item.subtitle,
+                            details: item.details,
+                            metadata: item.metadata
+                          })}
+                          className="p-3 rounded-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-start">
+                            <div className="p-2 rounded bg-blue-100 dark:bg-blue-900/50 mr-3 mt-0.5">
+                              <ResultIcon size={16} className="text-blue-600 dark:text-blue-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <h4 className="font-medium text-gray-800 dark:text-gray-200 truncate">
+                                  {item.title}
+                                </h4>
+                                {item.metadata && (
+                                  <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700 dark:bg-slate-600 dark:text-gray-300 flex-shrink-0">
+                                    {item.metadata}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                {item.subtitle}
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-500 mt-1 truncate">
+                                {item.details}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+                  <Clock size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+                  <h3 className="text-lg font-medium mb-2">No recent items</h3>
+                  <p className="text-sm">Start searching to see your recently accessed items here</p>
+                </div>
+              )}
+            </div>
+          ) : isLoading ? (
             <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-              <Search size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
-              <h3 className="text-lg font-medium mb-2">Search your business data</h3>
-              <p className="text-sm">Search across customers, jobs, invoices, estimates, and more...</p>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-sm">Searching...</p>
             </div>
           ) : searchResults.length === 0 ? (
             <div className="p-8 text-center text-gray-500 dark:text-gray-400">
@@ -592,13 +604,10 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
                           ({results.length})
                         </span>
                       </div>
-                      <button className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
-                        View All
-                      </button>
                     </div>
                     
                     <div className="space-y-2">
-                      {results.slice(0, 5).map((result) => {
+                      {results.map((result) => {
                         const ResultIcon = getResultIcon(result.type);
                         
                         return (
@@ -633,12 +642,6 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
                           </div>
                         );
                       })}
-                      
-                      {results.length > 5 && (
-                        <button className="w-full py-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
-                          View {results.length - 5} more {displayName.toLowerCase()}
-                        </button>
-                      )}
                     </div>
                   </div>
                 );

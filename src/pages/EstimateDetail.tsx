@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Send, Download, Copy, Edit, Save, X, Plus, Trash2,
   FileText, Pen, Check, DollarSign, Package, Phone, Mail, User,
-  Tag, Paperclip, MessageSquare, Eye, Calculator
+  Tag, Paperclip, MessageSquare, Eye, Calculator, MapPin, Calendar,
+  AlertCircle, Building, Star, Clock, CheckCircle, Target, Activity,
+  Wrench, Truck
 } from 'lucide-react';
 import { 
-  doc, getDoc, onSnapshot, updateDoc, addDoc, collection, query, where
+  doc, getDoc, onSnapshot, updateDoc, addDoc, collection, query, where, orderBy
 } from "firebase/firestore";
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import { db } from '../firebase';
+import { trackItemAccess } from '../utils/recentItemsTracker';
 
 // Helper functions
 const formatCurrency = (amount: number | undefined | null): string => `$${amount != null ? amount.toFixed(2) : '0.00'}`;
@@ -468,6 +471,25 @@ const EstimateDetail = () => {
 
         const estimateData = { id: estimateDoc.id, ...estimateDoc.data() };
         setEstimate(estimateData);
+        
+        // Track estimate access
+        if (userId && tenantId) {
+          const estimateTitle = (estimateData as any).estimateNumber || `Estimate ${estimateData.id.slice(-6)}`;
+          const estimateSubtitle = (estimateData as any).customerName || 'Unknown Customer';
+          const estimateDetails = `${(estimateData as any).description || ''} • $${((estimateData as any).total || 0).toFixed(2)}`;
+          
+          await trackItemAccess(
+            userId,
+            tenantId,
+            estimateData.id,
+            'estimate',
+            estimateTitle,
+            estimateSubtitle,
+            estimateDetails,
+            (estimateData as any).status
+          );
+        }
+        
         setEditData({
           summary: estimateData.summary || '',
           description: estimateData.description || '',

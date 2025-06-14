@@ -17,7 +17,9 @@ export function GoogleOneTapButton() {
       const credential = GoogleAuthProvider.credential(response.credential);
       signInWithCredential(auth, credential)
         .then(() => {
-          // User is signed in to Firebase!
+          // User is signed in to Firebase! 
+          // Let BasicProtectedRoute handle navigation based on onboarding status
+          console.log('Google sign-in successful');
         })
         .catch((error) => {
           console.error('Firebase sign-in error:', error);

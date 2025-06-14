@@ -824,44 +824,13 @@ const LocationDetailView: React.FC<{
 
   useEffect(() => {
     const loadJobs = async () => {
-      if (!location.id || !customer.id) return;
-
-      const db = getFirestore();
+      setLoading(true);
+      
       // TODO: Need to get tenantId from auth context to properly scope this query
       // For now, disable job loading to prevent permission errors
       setJobs([]);
       setLoading(false);
       return;
-
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const jobsData: Job[] = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data() as Job;
-          jobsData.push({ ...data, id: doc.id });
-        });
-
-        // Sort jobs by date
-        jobsData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        setJobs(jobsData);
-
-        // Calculate stats
-        const totalJobs = jobsData.length;
-        const totalRevenue = jobsData.reduce((sum, job) => sum + (job.total || 0), 0);
-        const avgJobTotal = totalJobs > 0 ? totalRevenue / totalJobs : 0;
-        const completedJobs = jobsData.filter(job => job.status === 'completed').length;
-        const completionRate = totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 0;
-
-        setStats({
-          totalJobs,
-          totalRevenue,
-          avgJobTotal,
-          completionRate
-        });
-
-        setLoading(false);
-      });
-
-      return () => unsubscribe();
     };
 
     loadJobs();

@@ -48,7 +48,11 @@ const FIELD_MAP: { [key: string]: string } = {
   'Member Status': 'memberStatus',
   'Member From': 'memberFrom',
   'Member To': 'memberTo',
-  'Membership Termination Date': 'membershipTerminationDate'
+  'Membership Termination Date': 'membershipTerminationDate',
+  'Last Job Date': 'lastJobDate',
+  'Last Service Date': 'lastJobDate',
+  'Most Recent Job Date': 'lastJobDate',
+  'Latest Job Date': 'lastJobDate'
 };
 
 const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClose, onComplete, userId, tenantId, pauseListener }) => {
@@ -217,14 +221,37 @@ const CustomerImportModal: React.FC<CustomerImportModalProps> = ({ isOpen, onClo
                   }
 
                   // Handle date fields
-                  if (['Created On', 'Member From', 'Member To', 'Membership Termination Date'].includes(col)) {
+                  if (['Created On', 'Member From', 'Member To', 'Membership Termination Date', 'Last Job Date', 'Last Service Date', 'Most Recent Job Date', 'Latest Job Date'].includes(col)) {
                     console.log(`Processing date for ${col}:`, val);
                     try {
+                      if (!val || val === '' || val === '0' || val === 'null' || val === 'undefined') {
+                        // For last job date fields, set to null instead of empty string to avoid 1969 dates
+                        if (['Last Job Date', 'Last Service Date', 'Most Recent Job Date', 'Latest Job Date'].includes(col)) {
+                          (customer as any)[key] = null;
+                        } else {
+                          (customer as any)[key] = '';
+                        }
+                        continue;
+                      }
+                      
                       const date = new Date(val);
-                      (customer as any)[key] = isNaN(date.getTime()) ? '' : date.toISOString();
+                      if (isNaN(date.getTime()) || date.getFullYear() < 1970) {
+                        // Invalid date or pre-1970 date (likely epoch issue)
+                        if (['Last Job Date', 'Last Service Date', 'Most Recent Job Date', 'Latest Job Date'].includes(col)) {
+                          (customer as any)[key] = null;
+                        } else {
+                          (customer as any)[key] = '';
+                        }
+                      } else {
+                        (customer as any)[key] = date.toISOString();
+                      }
                     } catch (dateError) {
                       console.error(`Error processing date for ${col}:`, dateError);
-                      (customer as any)[key] = '';
+                      if (['Last Job Date', 'Last Service Date', 'Most Recent Job Date', 'Latest Job Date'].includes(col)) {
+                        (customer as any)[key] = null;
+                      } else {
+                        (customer as any)[key] = '';
+                      }
                     }
                     continue;
                   }

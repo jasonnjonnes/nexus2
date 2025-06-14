@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import { db } from '../firebase';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import { trackItemAccess } from '../utils/recentItemsTracker';
 
 // Helper functions
 const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
@@ -32,7 +33,7 @@ const generateEstimateNumber = () => {
 const JobDetail = () => {
   const { jobId } = useParams();
   const navigate = useNavigate();
-  const { user, tenantId } = useFirebaseAuth();
+  const { user, tenantId, role } = useFirebaseAuth();
   const userId = user?.uid || null;
   
   const [job, setJob] = useState<any>(null);
@@ -45,6 +46,14 @@ const JobDetail = () => {
   const [estimates, setEstimates] = useState<any[]>([]);
   const [isCreatingInvoice, setIsCreatingInvoice] = useState(false);
   const [isCreatingEstimate, setIsCreatingEstimate] = useState(false);
+  
+  // Job summary editing state
+  const [isEditingSummary, setIsEditingSummary] = useState(false);
+  const [editedSummary, setEditedSummary] = useState('');
+  const [isSavingSummary, setIsSavingSummary] = useState(false);
+
+  // Check if user is office staff (can edit job summaries)
+  const isOfficeStaff = role && ['admin', 'office', 'csr', 'manager', 'accounting'].includes(role.toLowerCase());
 
   // Set loading state based on auth
   useEffect(() => {
@@ -62,6 +71,24 @@ const JobDetail = () => {
       if (docSnapshot.exists()) {
         const jobData = { id: docSnapshot.id, ...docSnapshot.data() };
         setJob(jobData);
+        
+        // Track job access
+        if (userId && tenantId) {
+          const jobTitle = jobData.jobNumber ? `Job ${jobData.jobNumber}` : `Job ${jobData.id.slice(-6)}`;
+          const jobSubtitle = jobData.jobType || 'Service Call';
+          const jobDetails = `${jobData.customerName || 'Unknown Customer'} • ${jobData.technician || 'Unassigned'}`;
+          
+          await trackItemAccess(
+            userId,
+            tenantId,
+            jobData.id,
+            'job',
+            jobTitle,
+            jobSubtitle,
+            jobDetails,
+            jobData.status
+          );
+        }
         
         // Load customer data
         if (jobData.customerId) {
@@ -330,6 +357,40 @@ const JobDetail = () => {
     }
   }, [job, customer, serviceLocation, businessUnit, db, userId, tenantId, navigate]);
 
+  // Save job summary
+  const handleSaveSummary = useCallback(async () => {
+    if (!job || !db || !userId || !tenantId) return;
+    
+    setIsSavingSummary(true);
+    try {
+      await updateDoc(doc(db, 'tenants', tenantId, 'jobs', job.id), {
+        summary: editedSummary,
+        updatedAt: new Date().toISOString()
+      });
+      
+      // Update local state
+      setJob(prev => ({ ...prev, summary: editedSummary }));
+      setIsEditingSummary(false);
+    } catch (error) {
+      console.error('Error saving job summary:', error);
+      alert('Failed to save job summary. Please try again.');
+    } finally {
+      setIsSavingSummary(false);
+    }
+  }, [job, editedSummary, db, userId, tenantId]);
+
+  // Cancel editing summary
+  const handleCancelEditSummary = useCallback(() => {
+    setEditedSummary(job?.summary || '');
+    setIsEditingSummary(false);
+  }, [job?.summary]);
+
+  // Start editing summary
+  const handleStartEditSummary = useCallback(() => {
+    setEditedSummary(job?.summary || '');
+    setIsEditingSummary(true);
+  }, [job?.summary]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-slate-900">
@@ -430,6 +491,60 @@ const JobDetail = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Job Summary - At the top */}
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border-2 border-blue-200 dark:border-blue-700 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100">Job Summary</h3>
+                {isOfficeStaff && !isEditingSummary && (
+                  <button
+                    onClick={handleStartEditSummary}
+                    className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                    title="Edit job summary"
+                  >
+                    <Edit size={16} />
+                  </button>
+                )}
+              </div>
+              
+              {isEditingSummary ? (
+                <div className="space-y-3">
+                  <textarea
+                    value={editedSummary}
+                    onChange={(e) => setEditedSummary(e.target.value)}
+                    placeholder="Enter job details, description, or notes about this job..."
+                    rows={4}
+                    className="w-full px-3 py-2 border border-blue-300 dark:border-blue-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={handleSaveSummary}
+                      disabled={isSavingSummary}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSavingSummary ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      onClick={handleCancelEditSummary}
+                      disabled={isSavingSummary}
+                      className="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-gray-700 dark:text-gray-300">
+                  {job?.summary ? (
+                    <div className="whitespace-pre-wrap">{job.summary}</div>
+                  ) : (
+                    <div className="text-gray-500 dark:text-gray-400 italic">
+                      {isOfficeStaff ? 'No job summary. Click edit to add details about this job.' : 'No job summary available.'}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Job Information */}
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
               <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100 mb-4">Job Information</h3>
@@ -451,17 +566,6 @@ const JobDetail = () => {
                   <div className="text-sm text-gray-600 dark:text-gray-400">Priority</div>
                 </div>
               </div>
-              
-              {/* Internal Job Summary - For CSR Use Only */}
-              {job.summary && (
-                <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                  <div className="flex items-center mb-2">
-                    <AlertCircle size={16} className="text-yellow-600 dark:text-yellow-400 mr-2" />
-                    <div className="font-medium text-yellow-800 dark:text-yellow-200">Internal Job Summary (CSR Use Only)</div>
-                  </div>
-                  <div className="text-yellow-700 dark:text-yellow-300 text-sm">{job.summary}</div>
-                </div>
-              )}
             </div>
 
             {/* Customer Information - Bill To Section */}
@@ -531,6 +635,8 @@ const JobDetail = () => {
                 </div>
               </div>
             )}
+
+
 
             {/* Invoices Section */}
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">

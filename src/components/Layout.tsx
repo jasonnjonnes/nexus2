@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import TopNavigation from './TopNavigation';
+import DialpadCTI from './DialpadCTI';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -10,6 +11,9 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { user, logout } = useFirebaseAuth();
   const navigate = useNavigate();
+
+  // Dialpad CTI configuration - replace with your actual client ID
+  const dialpadClientId = import.meta.env.VITE_DIALPAD_CLIENT_ID || 'your_client_id_here';
 
   /* ------------------------------------------------------------------
    * Theme (light / dark) handling for the whole application
@@ -45,6 +49,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     navigate('/login');
   };
 
+  const handleIncomingCall = (callData: any) => {
+    // You can add custom logic here for incoming calls
+    console.log('Incoming call:', callData);
+    // For example: show a notification, look up customer info, etc.
+  };
+
+  const handleDialpadAuth = (authenticated: boolean, userId: number | null) => {
+    console.log('Dialpad authentication changed:', { authenticated, userId });
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-slate-900 text-gray-900 dark:text-gray-100 transition-colors">
       {/* Top navigation bar with global search, links, dark-mode toggle, etc. */}
@@ -73,6 +87,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           {children}
         </div>
       </main>
+
+      {/* Dialpad CTI - only show if client ID is configured */}
+      {dialpadClientId && dialpadClientId !== 'your_client_id_here' && (
+        <DialpadCTI
+          clientId={dialpadClientId}
+          onIncomingCall={handleIncomingCall}
+          onAuthenticationChange={handleDialpadAuth}
+        />
+      )}
     </div>
   );
 };

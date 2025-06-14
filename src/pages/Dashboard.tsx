@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Info, 
   TrendingUp, 
@@ -22,7 +22,8 @@ import {
   Title,
   Tooltip,
   Legend,
-  ArcElement
+  ArcElement,
+  Filler
 } from 'chart.js';
 import { db } from '../firebase';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
@@ -34,7 +35,12 @@ import {
   onSnapshot,
   DocumentData,
   QuerySnapshot,
-  Unsubscribe
+  Unsubscribe,
+  getDocs,
+  getDoc,
+  doc,
+  setDoc,
+  limit
 } from 'firebase/firestore';
 
 // Register ChartJS components
@@ -46,7 +52,8 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  ArcElement
+  ArcElement,
+  Filler
 );
 
 // Define interfaces for type safety
@@ -166,6 +173,12 @@ const Dashboard: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
+  
+  // Recent data for performance
+  const [recentJobs, setRecentJobs] = useState<Job[]>([]);
+  const [recentInvoices, setRecentInvoices] = useState<Invoice[]>([]);
+  const [recentEstimates, setRecentEstimates] = useState<Estimate[]>([]);
+  const [isLoadingRecents, setIsLoadingRecents] = useState(false);
 
   // Filter state
   const [dateRange, setDateRange] = useState('today');
@@ -190,6 +203,70 @@ const Dashboard: React.FC = () => {
     return () => observer.disconnect();
   }, []);
 
+  // Load recent data efficiently
+  const loadRecentData = useCallback(async () => {
+    if (!db || !userId || !tenantId) return;
+    
+    setIsLoadingRecents(true);
+    try {
+      const promises = [];
+      
+      // Load recent jobs (last 25)
+      promises.push(
+        getDocs(query(
+          collection(db, 'tenants', tenantId, 'jobs'),
+          where("userId", "==", userId),
+          orderBy('createdAt', 'desc'),
+          limit(25)
+        )).then(snapshot => {
+          const jobsData: Job[] = [];
+          snapshot.forEach(doc => {
+            jobsData.push({ id: doc.id, ...doc.data() } as Job);
+          });
+          setRecentJobs(jobsData);
+        })
+      );
+      
+      // Load recent invoices (last 25)
+      promises.push(
+        getDocs(query(
+          collection(db, 'tenants', tenantId, 'invoices'),
+          where("userId", "==", userId),
+          orderBy('createdAt', 'desc'),
+          limit(25)
+        )).then(snapshot => {
+          const invoicesData: Invoice[] = [];
+          snapshot.forEach(doc => {
+            invoicesData.push({ id: doc.id, ...doc.data() } as Invoice);
+          });
+          setRecentInvoices(invoicesData);
+        })
+      );
+      
+      // Load recent estimates (last 25)
+      promises.push(
+        getDocs(query(
+          collection(db, 'tenants', tenantId, 'estimates'),
+          where("userId", "==", userId),
+          orderBy('createdAt', 'desc'),
+          limit(25)
+        )).then(snapshot => {
+          const estimatesData: Estimate[] = [];
+          snapshot.forEach(doc => {
+            estimatesData.push({ id: doc.id, ...doc.data() } as Estimate);
+          });
+          setRecentEstimates(estimatesData);
+        })
+      );
+      
+      await Promise.all(promises);
+    } catch (error) {
+      console.error('Error loading recent data:', error);
+    } finally {
+      setIsLoadingRecents(false);
+    }
+  }, [db, userId, tenantId]);
+
   // Load data from Firebase
   useEffect(() => {
     if (!db || !userId || !tenantId) {
@@ -198,6 +275,9 @@ const Dashboard: React.FC = () => {
     }
     
     console.log('Dashboard: Setting up Firebase listeners', { userId, tenantId });
+    
+    // Load recent data first for quick display
+    loadRecentData();
 
     const unsubscribes: Unsubscribe[] = [];
 
@@ -284,7 +364,7 @@ const Dashboard: React.FC = () => {
     return () => {
       unsubscribes.forEach(unsubscribe => unsubscribe());
     };
-  }, [db, userId, tenantId]);
+  }, [db, userId, tenantId, loadRecentData]);
 
   // Set loading to false once we have initial data or after a timeout
   useEffect(() => {
@@ -384,12 +464,19 @@ const Dashboard: React.FC = () => {
       return false;
     };
 
+    // Use recent data for today's filter for better performance, full data for other ranges
+    const useRecentData = dateRange === 'today' && selectedBusinessUnit === 'all' && selectedTechnician === 'all';
+    
+    const jobsToFilter = useRecentData ? recentJobs : jobs;
+    const invoicesToFilter = useRecentData ? recentInvoices : invoices;
+    const estimatesToFilter = useRecentData ? recentEstimates : estimates;
+
     return {
-      jobs: jobs.filter(job => filterByDate(job) && filterByBusinessUnit(job) && filterByTechnician(job)),
-      invoices: invoices.filter(invoice => filterByDate(invoice) && filterByBusinessUnit(invoice) && filterByTechnician(invoice)),
-      estimates: estimates.filter(estimate => filterByDate(estimate) && filterByBusinessUnit(estimate) && filterByTechnician(estimate))
+      jobs: jobsToFilter.filter(job => filterByDate(job) && filterByBusinessUnit(job) && filterByTechnician(job)),
+      invoices: invoicesToFilter.filter(invoice => filterByDate(invoice) && filterByBusinessUnit(invoice) && filterByTechnician(invoice)),
+      estimates: estimatesToFilter.filter(estimate => filterByDate(estimate) && filterByBusinessUnit(estimate) && filterByTechnician(estimate))
     };
-  }, [jobs, invoices, estimates, dateRange, selectedBusinessUnit, selectedTechnician, customStartDate, customEndDate]);
+  }, [jobs, invoices, estimates, recentJobs, recentInvoices, recentEstimates, dateRange, selectedBusinessUnit, selectedTechnician, customStartDate, customEndDate]);
 
   // Calculate metrics
   const metrics = useMemo((): Metrics => {
@@ -619,7 +706,21 @@ const Dashboard: React.FC = () => {
     <div className="space-y-6">
       {/* Header section */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Dashboard</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Dashboard</h1>
+          {isLoadingRecents && (
+            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+              <span>Loading recent data...</span>
+            </div>
+          )}
+          {dateRange === 'today' && selectedBusinessUnit === 'all' && selectedTechnician === 'all' && !isLoadingRecents && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-full text-xs">
+              <Clock size={12} />
+              <span>Recent data (25 items)</span>
+            </div>
+          )}
+        </div>
         <div className="mt-4 md:mt-0">
           <div className="flex items-center space-x-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-2">
             <select 

@@ -144,7 +144,7 @@ const Pricebook: React.FC = () => {
 
   const [currentServicePage, setCurrentServicePage] = useState(1);
   const [currentMaterialPage, setCurrentMaterialPage] = useState(1);
-  const ITEMS_PER_PAGE = 50;
+  const ITEMS_PER_PAGE = 25;
 
   const initialServiceForm: ServiceFormState = {
     code: '',

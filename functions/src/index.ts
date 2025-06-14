@@ -3,60 +3,23 @@ import * as admin from 'firebase-admin';
 import * as express from 'express';
 import * as cors from 'cors';
 
-afterInit();
+admin.initializeApp();
 
-// Initialize Express app for REST API
+// Create Express app for REST API
 const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json());
 
 /**
- * Initialise the Admin SDK exactly once.
+ * Middleware to verify Firebase ID token
  */
-function afterInit() {
-  if (admin.apps.length === 0) {
-    admin.initializeApp();
-  }
-}
-
-/**
- * Helper—create tenant shell if it doesn't exist.
- */
-async function ensureTenant(tenantId: string) {
-  const db = admin.firestore();
-  const ref = db.doc(`tenants/${tenantId}`);
-  const snap = await ref.get();
-  if (!snap.exists) {
-    await ref.set({
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-  }
-}
-
-/**
- * Determines role for new signup.
- * If no admin exists, return 'admin', otherwise 'csr'.
- */
-async function determineRole(tenantId: string): Promise<'admin' | 'csr'> {
-  const db = admin.firestore();
-  const adminsSnap = await db
-    .collection(`tenants/${tenantId}/members`)
-    .where('role', '==', 'admin')
-    .limit(1)
-    .get();
-  return adminsSnap.empty ? 'admin' : 'csr';
-}
-
-/**
- * Middleware to verify Firebase Auth token
- */
-const verifyToken = async (req: any, res: any, next: any) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  
-  if (!token) {
+async function verifyToken(req: any, res: any, next: any) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No token provided' });
   }
 
+  const token = authHeader.split('Bearer ')[1];
   try {
     const decodedToken = await admin.auth().verifyIdToken(token);
     req.user = decodedToken;
@@ -64,7 +27,324 @@ const verifyToken = async (req: any, res: any, next: any) => {
   } catch (error) {
     return res.status(401).json({ error: 'Invalid token' });
   }
-};
+}
+
+/**
+ * Helper function to get the next available tenant ID
+ */
+async function getNextTenantId(): Promise<string> {
+  const db = admin.firestore();
+  const counterRef = db.doc('system/tenantCounter');
+  
+  try {
+    const result = await db.runTransaction(async (transaction) => {
+      const counterDoc = await transaction.get(counterRef);
+      
+      let nextId = 100000; // Starting number
+      if (counterDoc.exists) {
+        nextId = counterDoc.data()?.lastTenantId + 1 || 100000;
+      }
+      
+      // Update the counter
+      transaction.set(counterRef, { lastTenantId: nextId }, { merge: true });
+      
+      return nextId.toString();
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting next tenant ID:', error);
+    // Fallback to timestamp-based ID if counter fails
+    return (100000 + Math.floor(Date.now() / 1000)).toString();
+  }
+}
+
+/**
+ * Cloud Function: runs on every new user signup
+ */
+export const setRoleOnSignup = functions.auth.user().onCreate(async (user) => {
+  console.log(`New user created: ${user.uid} (${user.email})`);
+  
+  try {
+    // Get next available tenant ID
+    const tenantId = await getNextTenantId();
+    console.log(`Assigning tenant ID ${tenantId} to user ${user.uid}`);
+    
+    // Create the tenant document with minimal info (onboarding incomplete)
+    const db = admin.firestore();
+    await db.doc(`tenants/${tenantId}`).set({
+      ownerId: user.uid,
+      ownerEmail: user.email,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      status: 'onboarding_pending', // Indicates onboarding not complete
+      onboardingComplete: false
+    });
+    
+    // Create member record for the user (they will become admin after onboarding)
+    await db.doc(`tenants/${tenantId}/members/${user.uid}`).set({
+      uid: user.uid,
+      email: user.email,
+      joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+      role: 'admin',
+      status: 'pending_onboarding'
+    });
+
+    // Store the tenant ID in a temporary user document for onboarding lookup
+    await db.doc(`users/${user.uid}`).set({
+      tenantId: tenantId,
+      email: user.email,
+      onboardingComplete: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // DO NOT set custom claims yet - wait until onboarding is complete
+    console.log(`Created tenant ${tenantId} for user ${user.uid}, awaiting onboarding completion`);
+  } catch (error) {
+    console.error(`Error setting up tenant for user ${user.uid}:`, error);
+    // Don't throw - we don't want to prevent user creation
+  }
+});
+
+/**
+ * Cloud Function: complete onboarding and set custom claims
+ * Updated: Force deployment
+ */
+export const completeOnboarding = functions.https.onCall(async (data, context) => {
+  // Verify the user is authenticated
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+  }
+
+  const { companyData } = data;
+  const userId = context.auth.uid;
+
+  if (!companyData) {
+    throw new functions.https.HttpsError('invalid-argument', 'Company data is required');
+  }
+
+  try {
+    const db = admin.firestore();
+    
+    // Get the user's tenant ID from the temporary user document
+    const userDoc = await db.doc(`users/${userId}`).get();
+    if (!userDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'User setup not found');
+    }
+    
+    const userData = userDoc.data();
+    const tenantId = userData?.tenantId;
+    
+    if (!tenantId) {
+      throw new functions.https.HttpsError('not-found', 'Tenant ID not found');
+    }
+
+    // Update tenant document with company information
+    await db.doc(`tenants/${tenantId}`).update({
+      ...companyData,
+      status: 'active',
+      onboardingComplete: true,
+      onboardingCompletedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Update member status
+    await db.doc(`tenants/${tenantId}/members/${userId}`).update({
+      status: 'active',
+      onboardingCompletedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Create company profile in settings
+    await db.doc(`tenants/${tenantId}/settings/companyProfile`).set({
+      companyName: companyData.companyName,
+      phoneNumber: companyData.phoneNumber,
+      email: companyData.email,
+      website: companyData.website || '',
+      businessAddress: companyData.businessAddress,
+      city: companyData.city,
+      state: companyData.state,
+      zipCode: companyData.zipCode,
+      industry: companyData.industry,
+      employeeCount: companyData.employeeCount,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Create default business units based on industry
+    const authorizationText = `I hereby authorize {businessunit_companyname} to proceed with the work described in the attached proposal/estimate dated [Date], including all materials, labor, and services specified therein, for the total amount of \${invoicetotal}. I understand and agree to the terms and conditions outlined in this agreement, including the project timeline, payment schedule, and scope of work. By signing below, I confirm that I have the authority to approve this work and commit to payment upon satisfactory completion.`;
+    
+    const industryName = companyData.industry.replace(' & ', ' ');
+    const defaultBusinessUnits = [
+      {
+        name: companyData.companyName,
+        officialName: `${industryName} - Service`,
+        email: companyData.email,
+        bccEmail: '',
+        phoneNumber: companyData.phoneNumber,
+        trade: companyData.industry,
+        division: 'Service',
+        tags: [],
+        defaultWarehouse: '',
+        currency: 'USD',
+        invoiceHeader: authorizationText,
+        invoiceMessage: 'Thanks for doing business with us!',
+        logo: '',
+        isActive: true,
+        userId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      },
+      {
+        name: companyData.companyName,
+        officialName: `${industryName} - Repair`,
+        email: companyData.email,
+        bccEmail: '',
+        phoneNumber: companyData.phoneNumber,
+        trade: companyData.industry,
+        division: 'Repair',
+        tags: [],
+        defaultWarehouse: '',
+        currency: 'USD',
+        invoiceHeader: authorizationText,
+        invoiceMessage: 'Thanks for doing business with us!',
+        logo: '',
+        isActive: true,
+        userId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      },
+      {
+        name: companyData.companyName,
+        officialName: `${industryName} - Maintenance`,
+        email: companyData.email,
+        bccEmail: '',
+        phoneNumber: companyData.phoneNumber,
+        trade: companyData.industry,
+        division: 'Maintenance',
+        tags: [],
+        defaultWarehouse: '',
+        currency: 'USD',
+        invoiceHeader: authorizationText,
+        invoiceMessage: 'Thanks for doing business with us!',
+        logo: '',
+        isActive: true,
+        userId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      },
+      {
+        name: companyData.companyName,
+        officialName: `${industryName} - Installation`,
+        email: companyData.email,
+        bccEmail: '',
+        phoneNumber: companyData.phoneNumber,
+        trade: companyData.industry,
+        division: 'Installation',
+        tags: [],
+        defaultWarehouse: '',
+        currency: 'USD',
+        invoiceHeader: authorizationText,
+        invoiceMessage: 'Thanks for doing business with us!',
+        logo: '',
+        isActive: true,
+        userId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }
+    ];
+
+    // Create business units
+    for (const businessUnit of defaultBusinessUnits) {
+      await db.collection(`tenants/${tenantId}/businessUnits`).add(businessUnit);
+    }
+
+    // Create default job types
+    const defaultJobTypes = [
+      {
+        name: 'Service Call',
+        description: 'General service call for maintenance, repairs, or troubleshooting',
+        category: 'Service Call',
+        isActive: true,
+        status: 'active',
+        userId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      },
+      {
+        name: 'Estimate',
+        description: 'On-site estimate for potential work or installation',
+        category: 'Estimate',
+        isActive: true,
+        status: 'active',
+        userId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      },
+      {
+        name: 'Diagnosis',
+        description: 'Diagnostic service to identify issues and recommend solutions',
+        category: 'Diagnosis',
+        isActive: true,
+        status: 'active',
+        userId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }
+    ];
+
+    // Create job types
+    for (const jobType of defaultJobTypes) {
+      await db.collection(`tenants/${tenantId}/jobTypes`).add(jobType);
+    }
+
+    console.log(`Created ${defaultBusinessUnits.length} default business units and ${defaultJobTypes.length} default job types for tenant ${tenantId}`);
+
+    // NOW set custom claims - this enables access to the app
+    await admin.auth().setCustomUserClaims(userId, { tenantId, role: 'admin' });
+
+    // Update user document to mark onboarding complete
+    await db.doc(`users/${userId}`).update({
+      onboardingComplete: true,
+      onboardingCompletedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`Onboarding completed for user ${userId}, tenant ${tenantId}`);
+    
+    return { success: true, tenantId, role: 'admin' };
+  } catch (error) {
+    console.error('Error completing onboarding:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to complete onboarding');
+  }
+});
+
+/**
+ * Cloud Function: manually assign tenant and role to user after onboarding
+ * This is now mainly for invited users or role changes
+ */
+export const assignTenantToUser = functions.https.onCall(async (data, context) => {
+  // Verify the user is authenticated
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+  }
+
+  const { tenantId, role = 'admin' } = data;
+  const userId = context.auth.uid;
+
+  if (!tenantId) {
+    throw new functions.https.HttpsError('invalid-argument', 'tenantId is required');
+  }
+
+  try {
+    // Set custom claims for the user
+    await admin.auth().setCustomUserClaims(userId, { tenantId, role });
+
+    console.log(`Assigned tenant ${tenantId} and role ${role} to user ${userId}`);
+    
+    return { success: true, tenantId, role };
+  } catch (error) {
+    console.error('Error assigning tenant to user:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to assign tenant');
+  }
+});
 
 // =========================
 // CUSTOMERS API ENDPOINTS
@@ -339,35 +619,4 @@ app.get('/health', (req, res) => {
 });
 
 // Export the API as a Firebase Function
-export const api = functions.https.onRequest(app);
-
-/**
- * Cloud Function: runs on every new user signup
- */
-export const setRoleOnSignup = functions.auth.user().onCreate(async (user) => {
-  // 1. Figure out tenant ID. For PoC we use domain slug. Adjust to your flow.
-  const emailDomain = user.email?.split('@')[1] ?? 'defaulttenant.com';
-  const tenantId = emailDomain.split('.')[0]; // acme.com -> acme
-
-  // 2. Ensure the tenant doc exists
-  await ensureTenant(tenantId);
-
-  // 3. Decide if this user should be admin or csr
-  const role: 'admin' | 'csr' = await determineRole(tenantId);
-
-  // 4. Write the member record (so we can query later)
-  await admin
-    .firestore()
-    .doc(`tenants/${tenantId}/members/${user.uid}`)
-    .set({
-      uid: user.uid,
-      email: user.email,
-      joinedAt: admin.firestore.FieldValue.serverTimestamp(),
-      role
-    });
-
-  // 5. Set custom claims – these drive rules & app UI
-  await admin.auth().setCustomUserClaims(user.uid, { tenantId, role });
-
-  console.log(`Assigned role ${role} to new user ${user.uid} for tenant ${tenantId}`);
-}); 
+export const api = functions.https.onRequest(app); 
