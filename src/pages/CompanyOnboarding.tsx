@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
-import { Building2, MapPin, Phone, Check, ArrowRight } from 'lucide-react';
+import { Building2, MapPin, Phone, Check, ArrowRight, LogOut } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -21,7 +21,7 @@ interface CompanyData {
 
 export default function CompanyOnboarding() {
   const navigate = useNavigate();
-  const { user } = useFirebaseAuth();
+  const { user, logout } = useFirebaseAuth();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
@@ -132,6 +132,16 @@ export default function CompanyOnboarding() {
       setError(err.message || 'Failed to complete setup. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } catch (err) {
+      console.error('Error signing out:', err);
+      setError('Failed to sign out. Please try again.');
     }
   };
 
@@ -360,7 +370,20 @@ export default function CompanyOnboarding() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <img src="/Nexus.svg" alt="Nexus Logo" className="mx-auto h-12 w-auto" />
+        <div className="flex justify-between items-center">
+          <div className="flex-1"></div>
+          <img src="/Nexus.svg" alt="Nexus Logo" className="h-12 w-auto" />
+          <div className="flex-1 flex justify-end">
+            <button
+              onClick={handleSignOut}
+              className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+              title="Sign out"
+            >
+              <LogOut size={16} className="mr-1" />
+              Sign Out
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
