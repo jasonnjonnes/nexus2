@@ -15,6 +15,11 @@ interface CacheContextType {
   clear: () => void;
   invalidate: (pattern: string) => void;
   
+  // Storage management
+  clearMemory: () => void;
+  getStorageUsage: () => number;
+  freeUpStorage: (targetSize: number) => number;
+  
   // Specific data cache methods
   getPricebook: () => any[] | null;
   setPricebook: (data: any[]) => void;
@@ -43,7 +48,8 @@ const CacheContext = createContext<CacheContextType | undefined>(undefined);
 
 const CACHE_PREFIX = 'servicepro_cache_';
 const DEFAULT_TTL_MINUTES = 30; // Default cache time: 30 minutes
-const MAX_CACHE_SIZE = 50 * 1024 * 1024; // 50MB max cache size
+const MAX_ENTRY_SIZE = 5 * 1024 * 1024; // 5MB max per entry
+const MAX_TOTAL_STORAGE = 10 * 1024 * 1024; // 10MB max total storage
 
 // Cache configuration for different data types
 const CACHE_CONFIG = {
@@ -103,43 +109,95 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     loadCacheFromStorage();
   }, []);
 
+  // Calculate current storage usage
+  const getStorageUsage = useCallback(() => {
+    let totalSize = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(CACHE_PREFIX)) {
+        const value = localStorage.getItem(key);
+        if (value) {
+          totalSize += new Blob([value]).size;
+        }
+      }
+    }
+    return totalSize;
+  }, []);
+
+  // Clear cache entries to free up space
+  const freeUpStorage = useCallback((targetSize: number) => {
+    const cache = cacheRef.current;
+    const entries = Array.from(cache.entries())
+      .sort((a, b) => a[1].timestamp - b[1].timestamp); // Sort by oldest first
+    
+    let freedSize = 0;
+    let clearedCount = 0;
+    
+    for (const [key, entry] of entries) {
+      if (freedSize >= targetSize) break;
+      
+      const storageKey = CACHE_PREFIX + key;
+      const value = localStorage.getItem(storageKey);
+      if (value) {
+        freedSize += new Blob([value]).size;
+      }
+      
+      localStorage.removeItem(storageKey);
+      cache.delete(key);
+      clearedCount++;
+    }
+    
+    console.log(`Freed up ${(freedSize / 1024 / 1024).toFixed(2)}MB by clearing ${clearedCount} cache entries`);
+    return freedSize;
+  }, []);
+
   // Save cache entry to localStorage
   const saveCacheEntry = useCallback((key: string, entry: CacheEntry) => {
     try {
       const storageKey = CACHE_PREFIX + key;
       const serialized = JSON.stringify(entry);
+      const entrySize = new Blob([serialized]).size;
       
-      // Check cache size limits
-      const currentSize = new Blob([serialized]).size;
-      if (currentSize > MAX_CACHE_SIZE) {
-        console.warn(`Cache entry too large: ${key} (${currentSize} bytes)`);
-        return;
+      // Check if single entry is too large
+      if (entrySize > MAX_ENTRY_SIZE) {
+        console.warn(`Cache entry too large, skipping: ${key} (${(entrySize / 1024 / 1024).toFixed(2)}MB)`);
+        return false;
+      }
+      
+      // Check total storage usage
+      const currentUsage = getStorageUsage();
+      if (currentUsage + entrySize > MAX_TOTAL_STORAGE) {
+        console.log(`Storage limit reached, freeing up space...`);
+        const targetFreeSize = Math.max(entrySize * 2, MAX_TOTAL_STORAGE * 0.3); // Free at least 30% or 2x entry size
+        freeUpStorage(targetFreeSize);
       }
       
       localStorage.setItem(storageKey, serialized);
+      return true;
     } catch (error) {
       console.error('Error saving cache entry:', error);
-      // If localStorage is full, clear some old entries
+      
       if (error.name === 'QuotaExceededError') {
-        clearOldEntries();
+        console.log('Storage quota exceeded, attempting to free up space...');
+        try {
+          // Try to free up 50% of storage
+          freeUpStorage(MAX_TOTAL_STORAGE * 0.5);
+          
+          // Retry saving the entry
+          const serialized = JSON.stringify(entry);
+          localStorage.setItem(CACHE_PREFIX + key, serialized);
+          console.log(`Successfully saved cache entry after cleanup: ${key}`);
+          return true;
+        } catch (retryError) {
+          console.error('Failed to save cache entry even after cleanup:', retryError);
+          return false;
+        }
       }
+      return false;
     }
-  }, []);
+  }, [getStorageUsage, freeUpStorage]);
 
-  // Clear old cache entries when storage is full
-  const clearOldEntries = useCallback(() => {
-    const cache = cacheRef.current;
-    const entries = Array.from(cache.entries())
-      .sort((a, b) => a[1].timestamp - b[1].timestamp)
-      .slice(0, Math.floor(cache.size / 2)); // Remove oldest 50%
-    
-    entries.forEach(([key]) => {
-      localStorage.removeItem(CACHE_PREFIX + key);
-      cache.delete(key);
-    });
-    
-    console.log(`Cleared ${entries.length} old cache entries`);
-  }, []);
+
 
   // Generic cache methods
   const get = useCallback(<T,>(key: string): T | null => {
@@ -222,6 +280,13 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     console.log(`Cache invalidated: ${keysToRemove.length} entries matching "${pattern}"`);
   }, []);
 
+  // Clear memory cache only (keep localStorage)
+  const clearMemory = useCallback(() => {
+    cacheRef.current.clear();
+    loadingStatesRef.current.clear();
+    console.log('Memory cache cleared');
+  }, []);
+
   // Specific data cache methods
   const getPricebook = useCallback(() => get<any[]>('pricebook'), []);
   const setPricebook = useCallback((data: any[]) => set('pricebook', data, CACHE_CONFIG.pricebook.ttl), []);
@@ -253,11 +318,14 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const totalRequests = hitCount + missCount;
     const hitRate = totalRequests > 0 ? (hitCount / totalRequests) * 100 : 0;
     
-    // Calculate total cache size
-    let totalSize = 0;
+    // Calculate total cache size in memory
+    let memorySize = 0;
     cache.forEach(entry => {
-      totalSize += new Blob([JSON.stringify(entry)]).size;
+      memorySize += new Blob([JSON.stringify(entry)]).size;
     });
+    
+    // Calculate localStorage usage
+    const storageSize = getStorageUsage();
     
     const formatSize = (bytes: number) => {
       if (bytes < 1024) return bytes + ' B';
@@ -267,10 +335,13 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     return {
       totalEntries,
-      totalSize: formatSize(totalSize),
-      hitRate: Math.round(hitRate)
+      memorySize: formatSize(memorySize),
+      storageSize: formatSize(storageSize),
+      totalSize: formatSize(memorySize + storageSize),
+      hitRate: Math.round(hitRate),
+      storageUsagePercent: Math.round((storageSize / MAX_TOTAL_STORAGE) * 100)
     };
-  }, []);
+  }, [getStorageUsage]);
 
   // Loading state management
   const isLoading = useCallback((key: string) => {
@@ -311,12 +382,36 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => clearInterval(cleanup);
   }, []);
 
+  // Expose cache management to global scope for debugging
+  useEffect(() => {
+    (window as any).clearServiceProCache = () => {
+      clear();
+      console.log('ServicePro cache cleared from console');
+    };
+    
+    (window as any).getServiceProCacheStats = () => {
+      const stats = getCacheStats();
+      console.table(stats);
+      return stats;
+    };
+    
+    (window as any).freeServiceProStorage = (sizeMB: number = 5) => {
+      const bytes = sizeMB * 1024 * 1024;
+      const freed = freeUpStorage(bytes);
+      console.log(`Freed ${(freed / 1024 / 1024).toFixed(2)}MB of storage`);
+      return freed;
+    };
+  }, [clear, getCacheStats, freeUpStorage]);
+
   const value: CacheContextType = useMemo(() => ({
     get,
     set,
     remove,
     clear,
     invalidate,
+    clearMemory,
+    getStorageUsage,
+    freeUpStorage,
     getPricebook,
     setPricebook,
     getCustomers,
