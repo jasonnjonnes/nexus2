@@ -2428,7 +2428,7 @@ const Settings: React.FC = () => {
     } finally {
       cache.setLoading(cacheKey, false);
     }
-  }, [db, userId, tenantId]);
+  }, [db, userId, tenantId, cache]);
 
   useEffect(() => {
     let isMounted = true;

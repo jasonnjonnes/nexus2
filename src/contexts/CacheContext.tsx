@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 interface CacheEntry<T = any> {
   data: T;
@@ -57,10 +57,16 @@ const CACHE_CONFIG = {
 };
 
 export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [cache, setCache] = useState<Map<string, CacheEntry>>(new Map());
-  const [loadingStates, setLoadingStates] = useState<Map<string, boolean>>(new Map());
+  const cacheRef = useRef<Map<string, CacheEntry>>(new Map());
+  const loadingStatesRef = useRef<Map<string, boolean>>(new Map());
+  const [, forceUpdate] = useState({});
   const [hitCount, setHitCount] = useState(0);
   const [missCount, setMissCount] = useState(0);
+
+  // Force re-render when cache changes
+  const triggerUpdate = useCallback(() => {
+    forceUpdate({});
+  }, []);
 
   // Load cache from localStorage on mount
   useEffect(() => {
@@ -93,7 +99,7 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         }
         
-        setCache(cacheData);
+        cacheRef.current = cacheData;
         console.log(`Cache loaded: ${cacheData.size} entries`);
       } catch (error) {
         console.error('Error loading cache from localStorage:', error);
@@ -128,6 +134,7 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Clear old cache entries when storage is full
   const clearOldEntries = useCallback(() => {
+    const cache = cacheRef.current;
     const entries = Array.from(cache.entries())
       .sort((a, b) => a[1].timestamp - b[1].timestamp)
       .slice(0, Math.floor(cache.size / 2)); // Remove oldest 50%
@@ -137,12 +144,12 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       cache.delete(key);
     });
     
-    setCache(new Map(cache));
     console.log(`Cleared ${entries.length} old cache entries`);
-  }, [cache]);
+  }, []);
 
   // Generic cache methods
   const get = useCallback(<T,>(key: string): T | null => {
+    const cache = cacheRef.current;
     const entry = cache.get(key);
     if (!entry) {
       setMissCount(prev => prev + 1);
@@ -154,14 +161,13 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Entry expired
       cache.delete(key);
       localStorage.removeItem(CACHE_PREFIX + key);
-      setCache(new Map(cache));
       setMissCount(prev => prev + 1);
       return null;
     }
 
     setHitCount(prev => prev + 1);
     return entry.data as T;
-  }, [cache]);
+  }, []);
 
   const set = useCallback(<T,>(key: string, data: T, ttlMinutes: number = DEFAULT_TTL_MINUTES) => {
     const entry: CacheEntry<T> = {
@@ -171,24 +177,21 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       key
     };
 
-    cache.set(key, entry);
-    setCache(new Map(cache));
+    cacheRef.current.set(key, entry);
     saveCacheEntry(key, entry);
     
     console.log(`Cache set: ${key} (TTL: ${ttlMinutes}m)`);
-  }, [cache, saveCacheEntry]);
+  }, [saveCacheEntry]);
 
   const remove = useCallback((key: string) => {
-    cache.delete(key);
+    cacheRef.current.delete(key);
     localStorage.removeItem(CACHE_PREFIX + key);
-    setCache(new Map(cache));
     console.log(`Cache removed: ${key}`);
-  }, [cache]);
+  }, []);
 
   const clear = useCallback(() => {
     // Clear memory cache
-    cache.clear();
-    setCache(new Map());
+    cacheRef.current.clear();
     
     // Clear localStorage cache
     const keysToRemove: string[] = [];
@@ -205,9 +208,10 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setMissCount(0);
     
     console.log('Cache cleared');
-  }, [cache]);
+  }, []);
 
   const invalidate = useCallback((pattern: string) => {
+    const cache = cacheRef.current;
     const keysToRemove: string[] = [];
     
     cache.forEach((_, key) => {
@@ -221,9 +225,8 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStorage.removeItem(CACHE_PREFIX + key);
     });
     
-    setCache(new Map(cache));
     console.log(`Cache invalidated: ${keysToRemove.length} entries matching "${pattern}"`);
-  }, [cache]);
+  }, []);
 
   // Specific data cache methods
   const getPricebook = useCallback(() => get<any[]>('pricebook'), [get]);
@@ -249,6 +252,7 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Cache stats
   const getCacheStats = useCallback(() => {
+    const cache = cacheRef.current;
     const totalEntries = cache.size;
     const totalRequests = hitCount + missCount;
     const hitRate = totalRequests > 0 ? (hitCount / totalRequests) * 100 : 0;
@@ -270,25 +274,26 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       totalSize: formatSize(totalSize),
       hitRate: Math.round(hitRate)
     };
-  }, [cache, hitCount, missCount]);
+  }, [hitCount, missCount]);
 
   // Loading state management
   const isLoading = useCallback((key: string) => {
-    return loadingStates.get(key) || false;
-  }, [loadingStates]);
+    return loadingStatesRef.current.get(key) || false;
+  }, []);
 
   const setLoading = useCallback((key: string, loading: boolean) => {
+    const loadingStates = loadingStatesRef.current;
     if (loading) {
       loadingStates.set(key, true);
     } else {
       loadingStates.delete(key);
     }
-    setLoadingStates(new Map(loadingStates));
-  }, [loadingStates]);
+  }, []);
 
   // Auto-cleanup expired entries every 5 minutes
   useEffect(() => {
     const cleanup = setInterval(() => {
+      const cache = cacheRef.current;
       const now = Date.now();
       const expiredKeys: string[] = [];
       
@@ -303,15 +308,14 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           cache.delete(key);
           localStorage.removeItem(CACHE_PREFIX + key);
         });
-        setCache(new Map(cache));
         console.log(`Auto-cleanup: removed ${expiredKeys.length} expired entries`);
       }
     }, 5 * 60 * 1000); // 5 minutes
 
     return () => clearInterval(cleanup);
-  }, [cache]);
+  }, []);
 
-  const value: CacheContextType = {
+  const value: CacheContextType = useMemo(() => ({
     get,
     set,
     remove,
@@ -334,7 +338,13 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     getCacheStats,
     isLoading,
     setLoading
-  };
+  }), [
+    get, set, remove, clear, invalidate,
+    getPricebook, setPricebook, getCustomers, setCustomers,
+    getJobs, setJobs, getStaff, setStaff,
+    getBusinessUnits, setBusinessUnits, getJobTypes, setJobTypes,
+    getEmails, setEmails, getCacheStats, isLoading, setLoading
+  ]);
 
   return (
     <CacheContext.Provider value={value}>
