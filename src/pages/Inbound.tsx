@@ -41,22 +41,31 @@ const formatEmailDate = (dateValue: any): string => {
 const sanitizeEmailHTML = (htmlContent: string): string => {
   if (!htmlContent) return '';
   
-  // Basic HTML sanitization - remove potentially dangerous elements and attributes
-  let sanitized = htmlContent
-    .replace(/<script[^>]*>.*?<\/script>/gi, '')
-    .replace(/<iframe[^>]*>.*?<\/iframe>/gi, '')
-    .replace(/<object[^>]*>.*?<\/object>/gi, '')
-    .replace(/<embed[^>]*>/gi, '')
-    .replace(/on\w+="[^"]*"/gi, '') // Remove event handlers
-    .replace(/javascript:/gi, ''); // Remove javascript: links
+  // Create a temporary div to parse HTML
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = htmlContent;
   
-  // Add responsive styles to images
-  sanitized = sanitized.replace(/<img([^>]*?)>/gi, '<img$1 style="max-width: 100%; height: auto; border-radius: 4px;">');
+  // Remove all elements except <a> tags
+  const elements = tempDiv.getElementsByTagName('*');
+  for (let i = elements.length - 1; i >= 0; i--) {
+    const element = elements[i];
+    if (element.tagName.toLowerCase() !== 'a') {
+      // Replace non-link elements with their text content
+      const textContent = element.textContent || '';
+      element.parentNode?.replaceChild(document.createTextNode(textContent), element);
+    }
+  }
   
-  // Style links
-  sanitized = sanitized.replace(/<a([^>]*?)>/gi, '<a$1 style="color: #3b82f6; text-decoration: underline;" target="_blank" rel="noopener noreferrer">');
+  // Style remaining links
+  const links = tempDiv.getElementsByTagName('a');
+  for (let i = 0; i < links.length; i++) {
+    const link = links[i];
+    link.setAttribute('style', 'color: #3b82f6; text-decoration: underline;');
+    link.setAttribute('target', '_blank');
+    link.setAttribute('rel', 'noopener noreferrer');
+  }
   
-  return sanitized;
+  return tempDiv.innerHTML;
 };
 import {
   collection,
