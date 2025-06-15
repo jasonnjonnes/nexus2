@@ -15,6 +15,7 @@ import Dispatch from './pages/Dispatch';
 import Inbound from './pages/Inbound';
 import Automations from './pages/Automations';
 import Accounting from './pages/Accounting';
+import Schedule from './pages/Schedule';
 import { Unauthorized } from './pages/Unauthorized';
 import { BasicLogin } from './pages/BasicLogin';
 import CompanyOnboarding from './pages/CompanyOnboarding';
@@ -121,9 +122,7 @@ export default function App() {
             path="/inbound"
             element={
               <BasicProtectedRoute>
-                <Layout>
-                  <Inbound />
-                </Layout>
+                <Inbound />
               </BasicProtectedRoute>
             }
           />
@@ -143,6 +142,16 @@ export default function App() {
               <BasicProtectedRoute>
                 <Layout>
                   <Accounting />
+                </Layout>
+              </BasicProtectedRoute>
+            }
+          />
+          <Route
+            path="/schedule"
+            element={
+              <BasicProtectedRoute>
+                <Layout>
+                  <Schedule />
                 </Layout>
               </BasicProtectedRoute>
             }

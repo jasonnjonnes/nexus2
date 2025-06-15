@@ -7,6 +7,7 @@ import {
 import GLAccounts from '../components/GLAccounts';
 import StaffInvitationModal from '../components/StaffInvitationModal';
 import AuthMethodManager from '../components/AuthMethodManager';
+import StripeAccountOnboarding from '../components/StripeAccountOnboarding';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import { db } from '../firebase';
 
@@ -2551,6 +2552,9 @@ const Settings: React.FC = () => {
                     <div className="max-w-4xl">
                       <AuthMethodManager />
                     </div>
+                  )}
+                  {selectedItem === 'payment-processing' && (
+                    <StripeAccountOnboarding />
                   )}
                   {selectedItem === 'company-profile' && db && userId && tenantId && (
                            <CompanyProfileManagement db={db} userId={userId} tenantId={tenantId} />

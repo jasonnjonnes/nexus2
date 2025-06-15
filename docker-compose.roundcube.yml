@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  roundcube:
+    image: roundcube/roundcubemail:latest
+    container_name: roundcube-mail
+    ports:
+      - "8080:80"
+    environment:
+      - ROUNDCUBEMAIL_DB_TYPE=sqlite
+      - ROUNDCUBEMAIL_SKIN=elastic
+      - ROUNDCUBEMAIL_DEFAULT_HOST=ssl://imap.gmail.com
+      - ROUNDCUBEMAIL_DEFAULT_PORT=993
+      - ROUNDCUBEMAIL_SMTP_SERVER=ssl://smtp.gmail.com
+      - ROUNDCUBEMAIL_SMTP_PORT=465
+    volumes:
+      - roundcube_data:/var/www/html
+      - ./roundcube-config:/var/roundcube/config
+    restart: unless-stopped
+
+volumes:
+  roundcube_data: 

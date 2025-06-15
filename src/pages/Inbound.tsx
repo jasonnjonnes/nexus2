@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, X, MapPin, Calendar, Plus, Phone, User, Building, Mail, MessageSquare } from 'lucide-react';
+import { Search, X, MapPin, Calendar, Plus, Phone, User, Building, Mail, MessageSquare, AlertCircle, 
+         Inbox, Users, MoreHorizontal, Bell, Settings, Filter, GripVertical } from 'lucide-react';
 import { db } from '../firebase';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import {
@@ -15,6 +16,10 @@ import {
   getDocs
 } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
+import { NotificationProvider } from '../contexts/NotificationContext';
+import TopNavigation from '../components/TopNavigation';
+import DialpadCTI from '../components/DialpadCTI';
+import FirebaseEmailInterface from '../components/FirebaseEmailInterface';
 
 // Helper function to generate job numbers
 const generateJobNumber = () => {
@@ -34,7 +39,14 @@ const initializeGooglePlaces = (inputElement, onPlaceSelected) => {
     autocomplete.addListener('place_changed', () => {
       const place = autocomplete.getPlace();
       if (place.address_components) {
-        const addressComponents = {};
+        const addressComponents: {
+          streetNumber?: string;
+          route?: string;
+          city?: string;
+          state?: string;
+          zip?: string;
+        } = {};
+        
         place.address_components.forEach(component => {
           const types = component.types;
           if (types.includes('street_number')) {
@@ -93,7 +105,12 @@ const CreateCustomerForm = ({ onCancel, onCreate }) => {
 
     return () => {
       if (autocompleteRef.current && window.google) {
-        window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
+        try {
+          // @ts-ignore - Google Maps API types may vary
+          window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
+        } catch (error) {
+          // Ignore cleanup errors
+        }
       }
     };
   }, []);
@@ -215,6 +232,124 @@ const CreateCustomerForm = ({ onCancel, onCreate }) => {
   );
 };
 
+// Draggable Section Component for Inbox
+const DraggableSection = ({ 
+  id, 
+  title, 
+  icon: Icon, 
+  count, 
+  items, 
+  color = 'blue',
+  onDragStart,
+  onDragOver,
+  onDrop,
+  isDragging,
+  isDropTarget
+}) => {
+  const colorClasses = {
+    blue: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300',
+    green: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300',
+    purple: 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300',
+    orange: 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-300',
+    gray: 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300',
+    indigo: 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
+  };
+
+  return (
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, id)}
+      onDragOver={onDragOver}
+      onDrop={(e) => onDrop(e, id)}
+      data-section={id}
+      className={`
+        bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 
+        transition-all duration-200 cursor-move hover:shadow-lg
+        ${isDragging ? 'opacity-50 scale-95' : ''}
+        ${isDropTarget ? 'ring-2 ring-blue-500 ring-opacity-50' : ''}
+      `}
+    >
+      {/* Section Header */}
+      <div className={`px-4 py-3 rounded-t-xl border-b border-gray-100 dark:border-slate-700 ${colorClasses[color]}`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <GripVertical size={16} className="text-gray-400 dark:text-gray-500" />
+            <Icon size={18} />
+            <h3 className="font-semibold text-sm">{title}</h3>
+            {count > 0 && (
+              <span className="bg-white dark:bg-slate-700 text-xs font-medium px-2 py-1 rounded-full shadow-sm">
+                {count}
+              </span>
+            )}
+          </div>
+          <button className="p-1 hover:bg-white/50 dark:hover:bg-slate-700/50 rounded transition-colors">
+            <MoreHorizontal size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* Section Content */}
+      <div className="p-4 space-y-3 max-h-64 overflow-y-auto">
+        {/* Show sample email items for preview in the draggable section */}
+        {items.length === 0 ? (
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            <Icon size={32} className="mx-auto mb-2 opacity-50" />
+            <p className="text-sm">No {title.toLowerCase()} yet</p>
+          </div>
+        ) : (
+          items.map((item, index) => (
+            <div
+              key={index}
+              className="flex items-center p-3 hover:bg-gray-50 dark:hover:bg-slate-700/50 rounded-lg cursor-pointer transition-colors group"
+            >
+              <div className="flex-shrink-0 mr-3">
+                {item.avatar ? (
+                  <img src={item.avatar} alt="" className="w-8 h-8 rounded-full" />
+                ) : (
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${colorClasses[color]}`}>
+                    <Icon size={14} />
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                    {item.name}
+                  </p>
+                  {item.time && (
+                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                      {item.time}
+                    </span>
+                  )}
+                </div>
+                {item.message && (
+                  <p className="text-xs text-gray-600 dark:text-gray-400 truncate mt-1">
+                    {item.message}
+                  </p>
+                )}
+                {item.status && (
+                  <div className="flex items-center mt-1">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      item.status === 'online' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                      item.status === 'busy' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                      'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
+                    }`}>
+                      {item.status}
+                    </span>
+                  </div>
+                )}
+              </div>
+              {item.unread && (
+                <div className="w-2 h-2 bg-blue-500 rounded-full ml-2"></div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+
 const Inbound: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('newjob');
@@ -253,6 +388,314 @@ const Inbound: React.FC = () => {
 
   const { user, tenantId } = useFirebaseAuth();
   const userId = user?.uid || null;
+
+  // Theme handling (previously in Layout)
+  const getInitialTheme = () => {
+    if (typeof window === 'undefined') return 'light';
+    return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
+  };
+
+  const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  };
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleSidebar = () => {
+    /* Future implementation: open / close sidebar */
+  };
+
+  // Dialpad CTI configuration
+  const dialpadClientId = import.meta.env.VITE_DIALPAD_CLIENT_ID || 'your_client_id_here';
+
+  const handleIncomingCall = (callData: any) => {
+    console.log('Incoming call:', callData);
+  };
+
+  const handleDialpadAuth = (authenticated: boolean, userId: number | null) => {
+    console.log('Dialpad authentication changed:', { authenticated, userId });
+  };
+
+  // Inbox state for omnichat interface
+  const [inboxSearchTerm, setInboxSearchTerm] = useState('');
+  const [selectedFilter, setSelectedFilter] = useState('all');
+  const [draggedItem, setDraggedItem] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
+  const [activeInboxTab, setActiveInboxTab] = useState('inbox'); // Add inbox tab state
+
+  // Conversation state for inbox
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [inboxView, setInboxView] = useState('conversations'); // 'conversations', 'team', 'calls', 'emails'
+  const [conversations, setConversations] = useState([
+    {
+      id: 1,
+      customer: 'Winsfrey Salonke',
+      email: 'winsfreysalonke@gmail.com',
+      lastMessage: 'Hello support! I have gone through your product documentation...',
+      timestamp: '2m ago',
+      unread: true,
+      status: 'Not Verified',
+      team: 'Support',
+      avatarColor: 'bg-pink-500'
+    },
+    {
+      id: 2,
+      customer: 'Sarah Johnson',
+      email: 'sarah.johnson@email.com',
+      lastMessage: 'Hi, I need help with my recent order...',
+      timestamp: '2m ago',
+      unread: true,
+      status: 'Verified',
+      team: 'Sales',
+      avatarColor: 'bg-blue-500'
+    },
+    {
+      id: 3,
+      customer: 'Mike Wilson',
+      email: 'mike.wilson@email.com',
+      lastMessage: 'Thanks for the quick response!',
+      timestamp: '15m ago',
+      unread: false,
+      status: 'Verified',
+      team: 'Support',
+      avatarColor: 'bg-green-500'
+    },
+    {
+      id: 4,
+      customer: 'Emma Davis',
+      email: 'emma.davis@email.com',
+      lastMessage: 'When will my appointment be scheduled?',
+      timestamp: '1h ago',
+      unread: true,
+      status: 'Verified',
+      team: 'Scheduling',
+      avatarColor: 'bg-purple-500'
+    }
+  ]);
+
+  // Sample data for inbox sections - replace with real data from your backend
+  const [inboxSections, setInboxSections] = useState([
+    {
+      id: 'inbox',
+      title: 'Your Inbox',
+      icon: Inbox,
+      color: 'blue',
+      count: 12,
+      items: [
+        {
+          name: 'Sarah Johnson',
+          message: 'Hi, I need help with my recent order...',
+          time: '2m ago',
+          unread: true,
+          avatar: null
+        },
+        {
+          name: 'Mike Wilson',
+          message: 'Thanks for the quick response!',
+          time: '15m ago',
+          unread: false,
+          avatar: null
+        },
+        {
+          name: 'Emma Davis',
+          message: 'When will my appointment be scheduled?',
+          time: '1h ago',
+          unread: true,
+          avatar: null
+        }
+      ]
+    },
+    {
+      id: 'customer-chats',
+      title: 'Customer Chats',
+      icon: MessageSquare,
+      color: 'green',
+      count: 8,
+      items: [
+        {
+          name: 'John Smith',
+          message: 'I have a question about pricing...',
+          time: '5m ago',
+          unread: true,
+          avatar: null
+        },
+        {
+          name: 'Lisa Brown',
+          message: 'Perfect, see you tomorrow!',
+          time: '30m ago',
+          unread: false,
+          avatar: null
+        }
+      ]
+    },
+    {
+      id: 'calls',
+      title: 'Calls',
+      icon: Phone,
+      color: 'purple',
+      count: 3,
+      items: [
+        {
+          name: 'David Lee',
+          message: 'Missed call',
+          time: '10m ago',
+          unread: true,
+          avatar: null
+        },
+        {
+          name: 'Anna Taylor',
+          message: 'Call completed - 5 min',
+          time: '45m ago',
+          unread: false,
+          avatar: null
+        }
+      ]
+    },
+    {
+      id: 'emails',
+      title: 'Emails',
+      icon: Mail,
+      color: 'orange',
+      count: 3,
+      items: [
+        {
+          name: 'Sarah Johnson',
+          message: 'HVAC Service Request - Need maintenance',
+          time: '2h ago',
+          unread: true,
+          avatar: null
+        },
+        {
+          name: 'Mike Wilson',
+          message: 'Re: Invoice #1234 - Payment processed',
+          time: '4h ago',
+          unread: true,
+          avatar: null
+        },
+        {
+          name: 'Emma Davis',
+          message: 'Quote Request - Plumbing installation',
+          time: '1d ago',
+          unread: false,
+          avatar: null
+        }
+      ]
+    },
+    {
+      id: 'office',
+      title: 'Office',
+      icon: Building,
+      color: 'gray',
+      count: 5,
+      items: [
+        {
+          name: 'Office Manager',
+          message: 'Team meeting at 3 PM',
+          time: '20m ago',
+          status: 'online',
+          unread: false,
+          avatar: null
+        },
+        {
+          name: 'HR Department',
+          message: 'Please review the new policy',
+          time: '1h ago',
+          status: 'busy',
+          unread: true,
+          avatar: null
+        },
+        {
+          name: 'Accounting',
+          message: 'Monthly reports ready',
+          time: '2h ago',
+          status: 'offline',
+          unread: false,
+          avatar: null
+        }
+      ]
+    },
+    {
+      id: 'technicians',
+      title: 'Technicians',
+      icon: Users,
+      color: 'indigo',
+      count: 8,
+      items: [
+        {
+          name: 'Tom Rodriguez',
+          message: 'Job completed successfully',
+          time: '30m ago',
+          status: 'online',
+          unread: false,
+          avatar: null
+        },
+        {
+          name: 'Alex Johnson',
+          message: 'Need parts for current job',
+          time: '45m ago',
+          status: 'busy',
+          unread: true,
+          avatar: null
+        },
+        {
+          name: 'Maria Garcia',
+          message: 'Running late to next appointment',
+          time: '1h ago',
+          status: 'online',
+          unread: true,
+          avatar: null
+        }
+      ]
+    }
+  ]);
+
+  // Drag and drop handlers for inbox
+  const handleDragStart = (e, sectionId) => {
+    setDraggedItem(sectionId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e, targetSectionId) => {
+    e.preventDefault();
+    
+    if (draggedItem && draggedItem !== targetSectionId) {
+      const draggedIndex = inboxSections.findIndex(s => s.id === draggedItem);
+      const targetIndex = inboxSections.findIndex(s => s.id === targetSectionId);
+      
+      const newSections = [...inboxSections];
+      const [draggedSection] = newSections.splice(draggedIndex, 1);
+      newSections.splice(targetIndex, 0, draggedSection);
+      
+      setInboxSections(newSections);
+    }
+    
+    setDraggedItem(null);
+    setDropTarget(null);
+  };
+
+  const handleDragEnter = (e, sectionId) => {
+    if (draggedItem && draggedItem !== sectionId) {
+      setDropTarget(sectionId);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDropTarget(null);
+  };
+
+  const totalUnread = inboxSections.reduce((total, section) => {
+    return total + section.items.filter(item => item.unread).length;
+  }, 0);
 
   // Manage loading state
   useEffect(() => {
@@ -619,509 +1062,982 @@ const Inbound: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
-      {/* Top Navigation Tabs */}
-      <div className="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
-        <div className="flex">
-          <button
-            onClick={() => setActiveTab('newjob')}
-            className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'newjob'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/50'
-                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
-          >
-            New Job
-          </button>
-          <button
-            onClick={() => setActiveTab('calls')}
-            className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors relative ${
-              activeTab === 'calls'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/50'
-                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
-          >
-            Calls
-            <span className="ml-2 bg-red-500 text-white text-xs px-1.5 rounded-full">1</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('inbox')}
-            className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors relative ${
-              activeTab === 'inbox'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/50'
-                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
-          >
-            Inbox
-            <span className="ml-2 bg-red-500 text-white text-xs px-1.5 rounded-full">31</span>
-          </button>
-        </div>
-      </div>
+    <>
+      {/* Everything that was previously inside return goes here, including NotificationProvider, main content, floating compose area, etc. */}
+      <NotificationProvider>
+        <div className="h-screen bg-gray-100 dark:bg-slate-900 text-gray-900 dark:text-gray-100 transition-colors overflow-hidden">
+          {/* Top navigation bar */}
+          <TopNavigation
+            toggleSidebar={toggleSidebar}
+            theme={theme}
+            toggleTheme={toggleTheme}
+          />
 
-      {/* Main Content */}
-      <div className="flex-1 bg-white dark:bg-slate-900 overflow-y-auto">
-        {activeTab === 'newjob' && (
-          <div className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h1 className="text-xl font-medium text-gray-800 dark:text-gray-100">New Job</h1>
+          {/* Main Inbound Content - Full Width */}
+          <div className="flex flex-col h-[calc(100vh-4rem)] bg-gray-50 dark:bg-slate-900 overflow-hidden">
+            {/* Top Navigation Tabs */}
+            <div className="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 shadow-sm">
+              <div className="px-4 py-3">
+                <nav className="-mb-px flex space-x-8">
+                  <button
+                    onClick={() => setActiveTab('newjob')}
+                    className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                      activeTab === 'newjob'
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-600'
+                    }`}
+                  >
+                    New Job
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('calls')}
+                    className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                      activeTab === 'calls'
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-600'
+                    }`}
+                  >
+                    Calls
+                    <span className="ml-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full font-medium shadow-sm">1</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('inbox')}
+                    className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                      activeTab === 'inbox'
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-600'
+                    }`}
+                  >
+                    Inbox
+                    {totalUnread > 0 && (
+                      <span className="ml-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full font-medium shadow-sm">
+                        {totalUnread}
+                      </span>
+                    )}
+                  </button>
+
+                </nav>
+              </div>
             </div>
 
-            <div className="space-y-4">
-              <button className="w-full text-left p-4 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800">
-                <div className="flex items-center text-gray-700 dark:text-gray-300">
-                  <Plus size={16} className="mr-2" />
-                  Manual job
-                </div>
-              </button>
-
-              <button className="w-full text-left p-4 border-2 border-blue-200 dark:border-blue-500 rounded-lg bg-blue-50 dark:bg-blue-900/30">
-                <div className="flex items-center text-blue-600 dark:text-blue-400">
-                  <Phone size={16} className="mr-2" />
-                  Manual Call
-                </div>
-              </button>
-
-              <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-6">
-                <div className="mb-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-medium text-gray-800 dark:text-gray-100">Search for service location</h2>
-                    <button 
-                      onClick={() => setShowCreateCustomer(true)}
-                      className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
-                    >
-                      New Customer
-                    </button>
+            {/* Main Content */}
+            <div className="flex-1 overflow-y-auto w-full">
+              {activeTab === 'newjob' && (
+                <div className="max-w-7xl mx-auto p-8">
+                  <div className="flex items-center justify-between mb-8">
+                    <div>
+                      <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">New Job</h1>
+                      <p className="text-gray-600 dark:text-gray-400 mt-1">Create a new job or lead for your customers</p>
+                    </div>
                   </div>
 
-                  <div className="relative mb-4">
-                    <input 
-                      type="text" 
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="Search by customer name, email, phone, or address..."
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" 
-                    />
-                    
-                    {/* Search Results Dropdown */}
-                    {filteredCustomers.length > 0 && (
-                      <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                        {filteredCustomers.map(customer => (
-                          <div
-                            key={customer.id}
-                            onClick={() => handleCustomerSelect(customer)}
-                            className="p-3 hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer border-b border-gray-100 dark:border-slate-600 last:border-b-0"
-                          >
-                            <div className="flex items-center">
-                              <User size={16} className="text-gray-400 mr-2" />
-                              <div>
-                                <div className="font-medium text-gray-800 dark:text-gray-200">{customer.name}</div>
-                                <div className="text-sm text-gray-600 dark:text-gray-400">
-                                  {customer.email} • {customer.phone}
-                                </div>
-                                {customer.locations?.[0] && (
-                                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                                    {customer.locations[0].address}
+                  <div className="space-y-6">
+                    {/* Quick Actions */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <button className="group relative overflow-hidden bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-6 hover:shadow-lg hover:border-gray-300 dark:hover:border-slate-600 transition-all duration-200">
+                        <div className="flex items-center text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100">
+                          <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center mr-4">
+                            <Plus size={20} className="text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <div className="text-left">
+                            <div className="font-semibold">Manual Job</div>
+                            <div className="text-sm text-gray-500 dark:text-gray-400">Create a job manually</div>
+                          </div>
+                        </div>
+                      </button>
+
+                      <button className="group relative overflow-hidden bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 border-2 border-blue-200 dark:border-blue-500/50 rounded-xl p-6 hover:shadow-lg transition-all duration-200">
+                        <div className="flex items-center text-blue-700 dark:text-blue-300">
+                          <div className="w-12 h-12 bg-blue-200 dark:bg-blue-800/50 rounded-lg flex items-center justify-center mr-4">
+                            <Phone size={20} className="text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <div className="text-left">
+                            <div className="font-semibold">Manual Call</div>
+                            <div className="text-sm text-blue-600 dark:text-blue-400">Log a phone call</div>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Main Job Form */}
+                    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-sm">
+                      <div className="p-8">
+                        {/* Customer Search Section */}
+                        <div className="mb-8">
+                          <div className="flex items-center justify-between mb-6">
+                            <div>
+                              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Customer & Location</h2>
+                              <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">Search for existing customer or create new</p>
+                            </div>
+                            <button 
+                              onClick={() => setShowCreateCustomer(true)}
+                              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                            >
+                              <Plus size={16} className="mr-2" />
+                              New Customer
+                            </button>
+                          </div>
+
+                          <div className="relative mb-6">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <Search className="h-5 w-5 text-gray-400" />
+                            </div>
+                            <input 
+                              type="text" 
+                              value={searchTerm}
+                              onChange={(e) => setSearchTerm(e.target.value)}
+                              placeholder="Search by customer name, email, phone, or address..."
+                              className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
+                            />
+                            
+                            {/* Search Results Dropdown */}
+                            {filteredCustomers.length > 0 && (
+                              <div className="absolute z-10 w-full mt-2 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                                {filteredCustomers.map(customer => (
+                                  <div
+                                    key={customer.id}
+                                    onClick={() => handleCustomerSelect(customer)}
+                                    className="p-4 hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer border-b border-gray-100 dark:border-slate-600 last:border-b-0 transition-colors"
+                                  >
+                                    <div className="flex items-center">
+                                      <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mr-3">
+                                        <User size={16} className="text-blue-600 dark:text-blue-400" />
+                                      </div>
+                                      <div className="flex-1">
+                                        <div className="font-medium text-gray-900 dark:text-gray-100">{customer.name}</div>
+                                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                                          {customer.email} • {customer.phone}
+                                        </div>
+                                        {customer.locations?.[0] && (
+                                          <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                            {customer.locations[0].address}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Selected Customer Display */}
+                          {selectedCustomer && (
+                            <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center">
+                                  <div className="w-10 h-10 bg-blue-200 dark:bg-blue-800/50 rounded-full flex items-center justify-center mr-3">
+                                    <User size={16} className="text-blue-600 dark:text-blue-400" />
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-blue-900 dark:text-blue-100">{selectedCustomer.name}</div>
+                                    <div className="text-sm text-blue-700 dark:text-blue-300">
+                                      {selectedCustomer.email} • {selectedCustomer.phone}
+                                    </div>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    setSelectedCustomer(null);
+                                    setSearchTerm('');
+                                  }}
+                                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 p-1 rounded-full hover:bg-blue-100 dark:hover:bg-blue-800/30 transition-colors"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Job Details Section */}
+                        <div className="border-t border-gray-200 dark:border-slate-700 pt-8">
+                          <div className="mb-6">
+                            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Job Details</h2>
+                            <p className="text-gray-600 dark:text-gray-400 text-sm">Configure the job settings and requirements</p>
+                          </div>
+
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Job Type *</label>
+                              <select 
+                                name="jobType"
+                                value={jobForm.jobType}
+                                onChange={handleJobFormChange}
+                                className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                              >
+                                <option value="">Select job type...</option>
+                                {jobTypes.map(jobType => (
+                                  <option key={jobType.id} value={jobType.name}>
+                                    {jobType.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Business Unit</label>
+                              <select 
+                                name="businessUnit"
+                                value={jobForm.businessUnit}
+                                onChange={handleJobFormChange}
+                                className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                              >
+                                <option value="">Select business unit...</option>
+                                {businessUnits.map(unit => (
+                                  <option key={unit.id} value={unit.businessUnitName}>
+                                    {unit.businessUnitName}
+                                  </option>
+                                ))}
+                              </select>
+                              {businessUnits.length === 0 && (
+                                <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center">
+                                  <AlertCircle size={12} className="mr-1" />
+                                  No business units found. Add business units in Settings → Business Units.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Marketing Campaign</label>
+                              <select 
+                                name="marketingCampaign"
+                                value={jobForm.marketingCampaign}
+                                onChange={handleJobFormChange}
+                                className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                              >
+                                <option value="">Select campaign...</option>
+                                <option value="Summer Special">Summer Special</option>
+                                <option value="Emergency Service">Emergency Service</option>
+                                <option value="Maintenance Plan">Maintenance Plan</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Priority</label>
+                              <select 
+                                name="priority"
+                                value={jobForm.priority}
+                                onChange={handleJobFormChange}
+                                className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                              >
+                                <option value="Normal">Normal</option>
+                                <option value="High">High</option>
+                                <option value="Emergency">Emergency</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Scheduling Section */}
+                          <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-6 mb-6">
+                            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                              <Calendar size={20} className="mr-2 text-blue-600 dark:text-blue-400" />
+                              Scheduling
+                            </h3>
+                            
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Start Date *</label>
+                                <input 
+                                  type="date"
+                                  name="startDate"
+                                  value={jobForm.startDate}
+                                  onChange={handleJobFormChange}
+                                  className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Arrival Window</label>
+                                <select 
+                                  name="arrivalWindow"
+                                  value={jobForm.arrivalWindow}
+                                  onChange={handleJobFormChange}
+                                  className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                >
+                                  <option value="">Select window...</option>
+                                  <option value="8am-12pm">8am-12pm</option>
+                                  <option value="12pm-5pm">12pm-5pm</option>
+                                  <option value="5pm-8pm">5pm-8pm</option>
+                                  <option value="custom">Custom arrival window</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Start Time</label>
+                                <input 
+                                  type="time"
+                                  name="startTime"
+                                  value={jobForm.startTime}
+                                  onChange={handleJobFormChange}
+                                  className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
+                                />
+                              </div>
+                            </div>
+
+                            {/* Custom Arrival Window Fields */}
+                            {showCustomArrival && (
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Arrival Window Start</label>
+                                  <input 
+                                    type="datetime-local"
+                                    name="customArrivalStart"
+                                    value={jobForm.customArrivalStart}
+                                    onChange={handleJobFormChange}
+                                    className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Arrival Window End</label>
+                                  <input 
+                                    type="datetime-local"
+                                    name="customArrivalEnd"
+                                    value={jobForm.customArrivalEnd}
+                                    onChange={handleJobFormChange}
+                                    className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Additional Details */}
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Technician (optional)</label>
+                              <select 
+                                name="technician"
+                                value={jobForm.technician}
+                                onChange={handleJobFormChange}
+                                className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                              >
+                                <option value="">Select technician...</option>
+                                {technicians.map(tech => (
+                                  <option key={tech.id} value={tech.name}>
+                                    {tech.name} ({tech.role})
+                                  </option>
+                                ))}
+                              </select>
+                              {technicians.length === 0 && (
+                                <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center">
+                                  <AlertCircle size={12} className="mr-1" />
+                                  No active technicians found. Add technicians in Settings.
+                                </p>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Customer PO # (optional)</label>
+                              <input 
+                                type="text" 
+                                name="customerPO"
+                                value={jobForm.customerPO}
+                                onChange={handleJobFormChange}
+                                className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Work Order (optional)</label>
+                              <input 
+                                type="text" 
+                                name="workOrder"
+                                value={jobForm.workOrder}
+                                onChange={handleJobFormChange}
+                                className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+                            <div className="lg:col-span-3">
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Summary</label>
+                              <textarea 
+                                name="summary"
+                                value={jobForm.summary}
+                                onChange={handleJobFormChange}
+                                rows={4}
+                                className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none" 
+                                placeholder="Describe the job details, customer requirements, or any special instructions..."
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Tags (optional)</label>
+                              <input 
+                                type="text" 
+                                name="tags"
+                                value={jobForm.tags}
+                                onChange={handleJobFormChange}
+                                placeholder="Comma separated"
+                                className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
+                              />
+                            </div>
+                          </div>
+
+                          {/* Checkboxes */}
+                          <div className="flex flex-wrap items-center gap-6 mb-8">
+                            <label className="flex items-center text-gray-700 dark:text-gray-300 cursor-pointer">
+                              <input 
+                                type="checkbox" 
+                                name="sendConfirmation"
+                                checked={jobForm.sendConfirmation}
+                                onChange={handleJobFormChange}
+                                className="w-4 h-4 text-blue-600 bg-white dark:bg-slate-700 border-gray-300 dark:border-slate-600 rounded focus:ring-blue-500 focus:ring-2 mr-3" 
+                              />
+                              <span className="text-sm font-medium">Send booking confirmation</span>
+                            </label>
+                            <label className="flex items-center text-gray-700 dark:text-gray-300 cursor-pointer">
+                              <input 
+                                type="checkbox" 
+                                name="requireSignature"
+                                checked={jobForm.requireSignature}
+                                onChange={handleJobFormChange}
+                                className="w-4 h-4 text-blue-600 bg-white dark:bg-slate-700 border-gray-300 dark:border-slate-600 rounded focus:ring-blue-500 focus:ring-2 mr-3" 
+                              />
+                              <span className="text-sm font-medium">Require customer signature on invoices for this job</span>
+                            </label>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-6 border-t border-gray-200 dark:border-slate-700">
+                            <button className="inline-flex items-center px-4 py-2 text-blue-600 dark:text-blue-400 border border-blue-600 dark:border-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors font-medium">
+                              <Building size={16} className="mr-2" />
+                              Attach Equipment
+                            </button>
+                            <div className="flex flex-wrap gap-3">
+                              <button 
+                                onClick={handleSaveAsLead}
+                                className="inline-flex items-center px-6 py-2.5 text-blue-600 dark:text-blue-400 border border-blue-600 dark:border-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors font-medium"
+                              >
+                                Save as Lead
+                              </button>
+                              <button className="inline-flex items-center px-6 py-2.5 text-blue-600 dark:text-blue-400 border border-blue-600 dark:border-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors font-medium">
+                                Build Estimate
+                              </button>
+                              <button 
+                                onClick={handleBookJob}
+                                className="inline-flex items-center px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
+                              >
+                                Book Job
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'calls' && (
+                <div className="max-w-7xl mx-auto p-8">
+                  <div className="mb-8">
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Calls</h1>
+                    <p className="text-gray-600 dark:text-gray-400 mt-1">Manage your incoming and outgoing calls</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Calls</h3>
+                        <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                          <Phone size={20} className="text-green-600 dark:text-green-400" />
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="flex items-center p-4 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer">
+                          <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mr-4">
+                            <Phone size={16} className="text-green-600 dark:text-green-400" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900 dark:text-gray-100">John Smith</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">2:30 PM - 3 min</div>
+                          </div>
+                          <div className="text-xs text-green-600 dark:text-green-400 font-medium">Completed</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Missed Calls</h3>
+                        <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                          <Phone size={20} className="text-red-600 dark:text-red-400" />
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="flex items-center p-4 border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer">
+                          <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mr-4">
+                            <Phone size={16} className="text-red-600 dark:text-red-400" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900 dark:text-gray-100">Sarah Johnson</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">1:15 PM</div>
+                          </div>
+                          <div className="text-xs text-red-600 dark:text-red-400 font-medium">Missed</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Voicemail</h3>
+                        <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                          <MessageSquare size={20} className="text-blue-600 dark:text-blue-400" />
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="flex items-center p-4 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer">
+                          <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mr-4">
+                            <MessageSquare size={16} className="text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900 dark:text-gray-100">Mike Wilson</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">11:45 AM - 1 min</div>
+                          </div>
+                          <div className="text-xs text-blue-600 dark:text-blue-400 font-medium">New</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+
+
+              {activeTab === 'inbox' && (
+                <div className="flex h-[calc(100vh-140px)] overflow-hidden">
+                  {/* Left sidebar with icon navigation */}
+                  <div className="w-16 bg-white dark:bg-slate-800 border-r border-gray-200 dark:border-slate-700 flex flex-col items-center py-4 space-y-4 h-full">
+                    <div className="relative group">
+                      <button 
+                        onClick={() => setInboxView('conversations')}
+                        className={`p-3 rounded-lg transition-colors ${
+                          inboxView === 'conversations' 
+                            ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30' 
+                            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <Inbox size={20} />
+                      </button>
+                      <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+                        All Conversations
+                      </div>
+                    </div>
+                    <div className="relative group">
+                      <button 
+                        onClick={() => setInboxView('team')}
+                        className={`p-3 rounded-lg transition-colors ${
+                          inboxView === 'team' 
+                            ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30' 
+                            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <Users size={20} />
+                      </button>
+                      <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+                        Team Inbox
+                      </div>
+                    </div>
+                    <div className="relative group">
+                      <button 
+                        onClick={() => setInboxView('calls')}
+                        className={`p-3 rounded-lg transition-colors ${
+                          inboxView === 'calls' 
+                            ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30' 
+                            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <Phone size={20} />
+                      </button>
+                      <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+                        Calls
+                      </div>
+                    </div>
+                    <div className="relative group">
+                      <button 
+                        onClick={() => setInboxView('emails')}
+                        className={`p-3 rounded-lg transition-colors ${
+                          inboxView === 'emails' 
+                            ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30' 
+                            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <Mail size={20} />
+                      </button>
+                      <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+                        Emails
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Conversation list */}
+                  <div className="w-80 bg-white dark:bg-slate-800 border-r border-gray-200 dark:border-slate-700 flex flex-col h-full">
+                    <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                        {inboxView === 'conversations' && 'All Conversations'}
+                        {inboxView === 'team' && 'Team Inbox'}
+                        {inboxView === 'calls' && 'Call History'}
+                        {inboxView === 'emails' && 'Email Inbox'}
+                      </h2>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                        <input
+                          type="text"
+                          placeholder="Search conversations..."
+                          className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto">
+                      {inboxView === 'conversations' && conversations.map((conversation) => (
+                        <div
+                          key={conversation.id}
+                          onClick={() => setSelectedConversation(conversation)}
+                          className={`p-4 border-b border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors ${
+                            selectedConversation?.id === conversation.id ? 'bg-blue-50 dark:bg-slate-700 border-l-4 border-l-blue-500' : ''
+                          }`}
+                        >
+                          <div className="flex items-start space-x-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium ${conversation.avatarColor}`}>
+                              {conversation.customer.split(' ').map(n => n[0]).join('')}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1">
+                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                  {conversation.customer}
+                                </h3>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  {conversation.timestamp}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-600 dark:text-gray-300 truncate mb-1">
+                                {conversation.lastMessage}
+                              </p>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  {conversation.team}
+                                </span>
+                                {conversation.unread && (
+                                  <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
                                 )}
                               </div>
                             </div>
                           </div>
-                        ))}
+                        </div>
+                      ))}
+
+                      {inboxView === 'team' && (
+                        <div className="p-8 text-center">
+                          <Users className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-4" />
+                          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Team Inbox</h3>
+                          <p className="text-gray-500 dark:text-gray-400">Shared conversations and team assignments will appear here</p>
+                        </div>
+                      )}
+
+                      {inboxView === 'calls' && (
+                        <div className="space-y-2 p-2">
+                          <div className="p-3 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-lg cursor-pointer transition-colors">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
+                                <Phone size={16} className="text-green-600 dark:text-green-400" />
+                              </div>
+                              <div className="flex-1">
+                                <div className="font-medium text-gray-900 dark:text-gray-100">Sarah Johnson</div>
+                                <div className="text-sm text-gray-600 dark:text-gray-400">Incoming call • 2m ago</div>
+                              </div>
+                              <div className="text-xs text-green-600 dark:text-green-400">3 min</div>
+                            </div>
+                          </div>
+                          <div className="p-3 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-lg cursor-pointer transition-colors">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                                <Phone size={16} className="text-red-600 dark:text-red-400" />
+                              </div>
+                              <div className="flex-1">
+                                <div className="font-medium text-gray-900 dark:text-gray-100">Mike Wilson</div>
+                                <div className="text-sm text-gray-600 dark:text-gray-400">Missed call • 15m ago</div>
+                              </div>
+                              <div className="text-xs text-red-600 dark:text-red-400">Missed</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {inboxView === 'emails' && (
+                        <FirebaseEmailInterface />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Main conversation area */}
+                  <div className="flex-1 flex flex-col bg-white dark:bg-slate-800 h-full overflow-hidden">
+                    {selectedConversation ? (
+                      <>
+                        {/* Conversation header */}
+                        <div className="p-4 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex-shrink-0">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium ${selectedConversation.avatarColor}`}>
+                                {selectedConversation.customer.split(' ').map(n => n[0]).join('')}
+                              </div>
+                              <div>
+                                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                                  {selectedConversation.customer}
+                                </h2>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                  {selectedConversation.email} • {selectedConversation.status}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <button className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                                <Phone size={18} />
+                              </button>
+                              <button className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                                <Mail size={18} />
+                              </button>
+                              <button className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                                <MoreHorizontal size={18} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Messages area */}
+                        <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-slate-800">
+                          <div className="space-y-4 pb-60">
+                            {/* System message */}
+                            <div className="flex justify-center">
+                              <div className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 px-4 py-2 rounded-full text-sm">
+                                We're ready to help. Please share your query.
+                              </div>
+                            </div>
+
+                            {/* Customer message */}
+                            <div className="flex items-start space-x-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium ${selectedConversation.avatarColor}`}>
+                                {selectedConversation.customer.split(' ').map(n => n[0]).join('')}
+                              </div>
+                              <div className="flex-1">
+                                <div className="bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg p-3 max-w-md">
+                                  <p className="text-sm text-gray-900 dark:text-gray-100">
+                                    Hello support! I have gone through your product documentation, and I'm excited about purchasing your product as it aligns perfectly with my needs. Could you guide me on how to initiate the process?
+                                  </p>
+                                </div>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">2:23 PM</p>
+                              </div>
+                            </div>
+
+                            {/* Agent response */}
+                            <div className="flex items-start space-x-3 justify-end">
+                              <div className="flex-1 flex justify-end">
+                                <div className="bg-blue-600 text-white rounded-lg p-3 max-w-md">
+                                  <p className="text-sm">
+                                    Hi Riftwire, thank you for reaching out to our support center! To get started with our product, simply follow the steps outlined in the attached article.
+                                  </p>
+                                  <div className="mt-2">
+                                    <a href="#" className="text-blue-200 hover:text-white underline text-sm">
+                                      How to Sign Up for a Free Trial
+                                    </a>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
+                                OD
+                              </div>
+                            </div>
+                            <div className="flex justify-end">
+                              <p className="text-xs text-gray-500 dark:text-gray-400">2:30 PM</p>
+                            </div>
+
+                            {/* Customer reply */}
+                            <div className="flex items-start space-x-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium ${selectedConversation.avatarColor}`}>
+                                {selectedConversation.customer.split(' ').map(n => n[0]).join('')}
+                              </div>
+                              <div className="flex-1">
+                                <div className="bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg p-3 max-w-md">
+                                  <p className="text-sm text-gray-900 dark:text-gray-100">
+                                    Thanks for sharing the document! It's helpful. I've signed up for the free trial and will
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center">
+                        <div className="text-center">
+                          <MessageSquare className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-4" />
+                          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No conversation selected</h3>
+                          <p className="text-gray-500 dark:text-gray-400">Choose a conversation from the list to start messaging</p>
+                        </div>
                       </div>
                     )}
                   </div>
 
-                  {/* Selected Customer Display */}
-                  {selectedCustomer && (
-                    <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <User size={16} className="text-blue-600 dark:text-blue-400 mr-2" />
-                          <div>
-                            <div className="font-medium text-blue-800 dark:text-blue-200">{selectedCustomer.name}</div>
-                            <div className="text-sm text-blue-600 dark:text-blue-400">
-                              {selectedCustomer.email} • {selectedCustomer.phone}
+                  {/* Right sidebar - Customer details */}
+                  <div className="w-80 bg-gray-50 dark:bg-slate-900 border-l border-gray-200 dark:border-slate-700 p-4 h-full overflow-y-auto">
+                    {selectedConversation && (
+                      <div className="space-y-6">
+                        {/* Customer Details Section */}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Customer Details</h3>
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                              <select className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option>Open</option>
+                                <option>Pending</option>
+                                <option>Resolved</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Assignee</label>
+                              <select className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option>Unassigned</option>
+                                <option>John Doe</option>
+                                <option>Jane Smith</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Priority</label>
+                              <select className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option>Medium</option>
+                                <option>Low</option>
+                                <option>High</option>
+                                <option>Urgent</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
+                              <select className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option>--</option>
+                                <option>Technical Support</option>
+                                <option>Billing</option>
+                                <option>General Inquiry</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Tags</label>
+                              <input
+                                type="text"
+                                placeholder="Add tags..."
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              />
                             </div>
                           </div>
                         </div>
-                        <button
-                          onClick={() => {
-                            setSelectedCustomer(null);
-                            setSearchTerm('');
-                          }}
-                          className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
-                        >
-                          <X size={16} />
-                        </button>
+
+                        {/* User Data Section */}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">User Data</h3>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Email:</span>
+                              <span className="text-gray-900 dark:text-gray-100">{selectedConversation.email}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Status:</span>
+                              <span className="text-red-600 dark:text-red-400">Not Verified</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Created:</span>
+                              <span className="text-gray-900 dark:text-gray-100">2 days ago</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Links Section */}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Links</h3>
+                          <div className="space-y-2">
+                            <button className="w-full text-left px-3 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                              Create & Link Ticket
+                            </button>
+                            <button className="w-full text-left px-3 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                              Link Ticket
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Recent Conversations Section */}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Recent Conversations</h3>
+                          <div className="space-y-2">
+                            <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700">
+                              <p className="text-sm text-gray-900 dark:text-gray-100 font-medium">Product inquiry</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">3 days ago</p>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
+              )}
+            </div>
 
-                <div>
-                  <div className="flex items-center mb-4">
-                    <h2 className="text-lg font-medium text-gray-800 dark:text-gray-100">Job Details</h2>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Job Type *</label>
-                      <select 
-                        name="jobType"
-                        value={jobForm.jobType}
-                        onChange={handleJobFormChange}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
-                      >
-                        <option value="">Select job type...</option>
-                        {jobTypes.map(jobType => (
-                          <option key={jobType.id} value={jobType.name}>
-                            {jobType.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Business Unit</label>
-                      <select 
-                        name="businessUnit"
-                        value={jobForm.businessUnit}
-                        onChange={handleJobFormChange}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
-                      >
-                        <option value="">Select business unit...</option>
-                        {businessUnits.map(unit => (
-                          <option key={unit.id} value={unit.businessUnitName}>
-                            {unit.businessUnitName}
-                          </option>
-                        ))}
-                      </select>
-                      {businessUnits.length === 0 && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          No business units found. Add business units in Settings → Business Units.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Marketing Campaign</label>
-                      <select 
-                        name="marketingCampaign"
-                        value={jobForm.marketingCampaign}
-                        onChange={handleJobFormChange}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
-                      >
-                        <option value="">Select campaign...</option>
-                        <option value="Summer Special">Summer Special</option>
-                        <option value="Emergency Service">Emergency Service</option>
-                        <option value="Maintenance Plan">Maintenance Plan</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Priority</label>
-                      <select 
-                        name="priority"
-                        value={jobForm.priority}
-                        onChange={handleJobFormChange}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
-                      >
-                        <option value="Normal">Normal</option>
-                        <option value="High">High</option>
-                        <option value="Emergency">Emergency</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4 mb-4">
-                    <div>
-                      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Start Date *</label>
-                      <div className="relative">
-                        <input 
-                          type="date"
-                          name="startDate"
-                          value={jobForm.startDate}
-                          onChange={handleJobFormChange}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" 
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Arrival Window</label>
-                      <div className="flex items-center">
-                        <select 
-                          name="arrivalWindow"
-                          value={jobForm.arrivalWindow}
-                          onChange={handleJobFormChange}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
-                        >
-                          <option value="">Select window...</option>
-                          <option value="8am-12pm">8am-12pm</option>
-                          <option value="12pm-5pm">12pm-5pm</option>
-                          <option value="5pm-8pm">5pm-8pm</option>
-                          <option value="custom">Custom arrival window</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Start Time</label>
-                      <input 
-                        type="time"
-                        name="startTime"
-                        value={jobForm.startTime}
-                        onChange={handleJobFormChange}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" 
-                      />
-                    </div>
-                  </div>
-
-                  {/* Custom Arrival Window Fields */}
-                  {showCustomArrival && (
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div>
-                        <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Arrival Window Start</label>
-                        <input 
-                          type="datetime-local"
-                          name="customArrivalStart"
-                          value={jobForm.customArrivalStart}
-                          onChange={handleJobFormChange}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" 
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Arrival Window End</label>
-                        <input 
-                          type="datetime-local"
-                          name="customArrivalEnd"
-                          value={jobForm.customArrivalEnd}
-                          onChange={handleJobFormChange}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" 
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-3 gap-4 mb-4">
-                    <div>
-                      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Technician (optional)</label>
-                      <select 
-                        name="technician"
-                        value={jobForm.technician}
-                        onChange={handleJobFormChange}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
-                      >
-                        <option value="">Select technician...</option>
-                        {technicians.map(tech => (
-                          <option key={tech.id} value={tech.name}>
-                            {tech.name} ({tech.role})
-                          </option>
-                        ))}
-                      </select>
-                      {technicians.length === 0 && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          No active technicians found. Add technicians in Settings.
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Customer PO # (optional)</label>
-                      <input 
-                        type="text" 
-                        name="customerPO"
-                        value={jobForm.customerPO}
-                        onChange={handleJobFormChange}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" 
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Work Order (optional)</label>
-                      <input 
-                        type="text" 
-                        name="workOrder"
-                        value={jobForm.workOrder}
-                        onChange={handleJobFormChange}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" 
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-4 mb-4">
-                    <div className="col-span-3">
-                      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Summary</label>
-                      <textarea 
-                        name="summary"
-                        value={jobForm.summary}
-                        onChange={handleJobFormChange}
-                        className="w-full p-3 min-h-[100px] border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" 
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Tags (optional)</label>
-                      <input 
-                        type="text" 
-                        name="tags"
-                        value={jobForm.tags}
-                        onChange={handleJobFormChange}
-                        placeholder="Comma separated"
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" 
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center mb-4 space-x-4">
-                    <label className="flex items-center text-gray-700 dark:text-gray-300">
-                      <input 
-                        type="checkbox" 
-                        name="sendConfirmation"
-                        checked={jobForm.sendConfirmation}
-                        onChange={handleJobFormChange}
-                        className="rounded border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 mr-2" 
-                      />
-                      Send booking confirmation
-                    </label>
-                    <label className="flex items-center text-gray-700 dark:text-gray-300">
-                      <input 
-                        type="checkbox" 
-                        name="requireSignature"
-                        checked={jobForm.requireSignature}
-                        onChange={handleJobFormChange}
-                        className="rounded border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 mr-2" 
-                      />
-                      Require customer signature on invoices for this job
-                    </label>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <button className="px-4 py-2 text-blue-600 dark:text-blue-400 border border-blue-600 dark:border-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/50">
-                      Attach Equipment
+            {/* Floating compose area - positioned relative to viewport, fixed width */}
+            {selectedConversation && activeTab === 'inbox' && (
+              <div className="fixed bottom-4 left-[calc(384px+4rem)] right-[calc(320px+4rem)] z-20">
+                <div style={{ width: '480px', margin: '0 auto' }}>
+                  {/* Reply/Private Note tabs - centered */}
+                  <div className="flex justify-center items-center space-x-6 mb-4">
+                    <button className="px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 border-b-2 border-blue-500">
+                      Reply
                     </button>
-                    <div className="space-x-3">
-                      <button 
-                        onClick={handleSaveAsLead}
-                        className="px-4 py-2 text-blue-600 dark:text-blue-400 border border-blue-600 dark:border-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/50"
-                      >
-                        Save as Lead
+                    <button className="px-4 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+                      Private Note
+                    </button>
+                  </div>
+                  {/* Floating message box */}
+                  <div className="relative bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-xl shadow-lg">
+                    <textarea
+                      placeholder="Compose your message"
+                      rows={3}
+                      className="w-full px-4 py-3 pr-16 border-0 rounded-xl bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-0 focus:outline-none resize-none text-sm"
+                    />
+                    {/* Floating send button in bottom right */}
+                    <button className="absolute bottom-3 right-3 w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center transition-colors shadow-md">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 21L23 12L2 3V10L17 12L2 14V21Z" fill="currentColor"/>
+                      </svg>
+                    </button>
+                    {/* Toolbar at bottom left */}
+                    <div className="absolute bottom-3 left-3 flex items-center space-x-2">
+                      <button className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-600 rounded-md transition-colors">
+                        <Plus size={16} />
                       </button>
-                      <button className="px-4 py-2 text-blue-600 dark:text-blue-400 border border-blue-600 dark:border-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/50">
-                        Build estimate
-                      </button>
-                      <button 
-                        onClick={handleBookJob}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                      >
-                        Book job
+                      <button className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-600 rounded-md transition-colors">
+                        <MessageSquare size={16} />
                       </button>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
+        </div>
+
+        {/* Dialpad CTI */}
+        {dialpadClientId && dialpadClientId !== 'your_client_id_here' && (
+          <DialpadCTI
+            clientId={dialpadClientId}
+            onIncomingCall={handleIncomingCall}
+            onAuthenticationChange={handleDialpadAuth}
+          />
         )}
 
-        {activeTab === 'calls' && (
-          <div className="p-6">
-            <h1 className="text-xl font-medium text-gray-800 dark:text-gray-100 mb-6">Calls</h1>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-                <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100 mb-4">Recent Calls</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center p-3 border border-gray-200 dark:border-slate-700 rounded-lg">
-                    <Phone size={16} className="text-green-600 mr-3" />
-                    <div>
-                      <div className="font-medium text-gray-800 dark:text-gray-100">John Smith</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">2:30 PM - 3 min</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-                <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100 mb-4">Missed Calls</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center p-3 border border-gray-200 dark:border-slate-700 rounded-lg">
-                    <Phone size={16} className="text-red-600 mr-3" />
-                    <div>
-                      <div className="font-medium text-gray-800 dark:text-gray-100">Sarah Johnson</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">1:15 PM</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-                <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100 mb-4">Voicemail</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center p-3 border border-gray-200 dark:border-slate-700 rounded-lg">
-                    <MessageSquare size={16} className="text-blue-600 mr-3" />
-                    <div>
-                      <div className="font-medium text-gray-800 dark:text-gray-100">Mike Wilson</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">11:45 AM - 1 min</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* Create Customer Modal */}
+        {showCreateCustomer && (
+          <CreateCustomerForm
+            onCancel={() => setShowCreateCustomer(false)}
+            onCreate={handleCreateCustomer}
+          />
         )}
-
-        {activeTab === 'inbox' && (
-          <div className="p-6">
-            <h1 className="text-xl font-medium text-gray-800 dark:text-gray-100 mb-6">Inbox</h1>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-                <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100 mb-4">My Chats</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center p-3 border border-gray-200 dark:border-slate-700 rounded-lg">
-                    <User size={16} className="text-blue-600 mr-3" />
-                    <div>
-                      <div className="font-medium text-gray-800 dark:text-gray-100">Direct Message</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">Private conversation</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-                <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100 mb-4">Company Chats</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center p-3 border border-gray-200 dark:border-slate-700 rounded-lg">
-                    <Building size={16} className="text-green-600 mr-3" />
-                    <div>
-                      <div className="font-medium text-gray-800 dark:text-gray-100">Customer Inquiry</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">From website chat</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-                <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100 mb-4">Internal</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center p-3 border border-gray-200 dark:border-slate-700 rounded-lg">
-                    <MessageSquare size={16} className="text-purple-600 mr-3" />
-                    <div>
-                      <div className="font-medium text-gray-800 dark:text-gray-100">Team Discussion</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">Internal team chat</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Create Customer Modal */}
-      {showCreateCustomer && (
-        <CreateCustomerForm
-          onCancel={() => setShowCreateCustomer(false)}
-          onCreate={handleCreateCustomer}
-        />
-      )}
-    </div>
+      </NotificationProvider>
+    </>
   );
 };
 

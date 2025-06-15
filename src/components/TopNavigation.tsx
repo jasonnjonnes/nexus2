@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import DarkModeToggle from './DarkModeToggle';
 import GlobalSearch from './GlobalSearch';
+import NotificationDropdown from './NotificationDropdown';
+import UserProfileDropdown from './UserProfileDropdown';
 
 interface TopNavigationProps {
   toggleSidebar: () => void;
@@ -45,14 +47,13 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ toggleSidebar, theme, tog
               />
             </div>
             {/* Mobile Icons */}
-            <div className="flex items-center gap-4 md:hidden">
+            <div className="flex items-center gap-2 md:hidden">
               <DarkModeToggle theme={theme} toggleTheme={toggleTheme} />
-              <button className="p-1 rounded-full text-gray-500 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white">
-                <Bell size={20} />
-              </button>
+              <NotificationDropdown />
               <button onClick={() => navigate('/settings')} className="p-1 rounded-full text-gray-500 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white">
                 <Settings size={20} />
               </button>
+              <UserProfileDropdown />
             </div>
           </div>
           
@@ -73,19 +74,13 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ toggleSidebar, theme, tog
           </div>
           
           {/* Desktop Icons */}
-          <div className="hidden md:flex md:items-center md:gap-4">
+          <div className="hidden md:flex md:items-center md:gap-3">
             <DarkModeToggle theme={theme} toggleTheme={toggleTheme} />
-            <button className="p-1 rounded-full text-gray-500 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white">
-              <Bell size={20} />
-            </button>
+            <NotificationDropdown />
             <button onClick={() => navigate('/settings')} className="p-1 rounded-full text-gray-500 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white">
               <Settings size={20} />
             </button>
-            <button className="flex rounded-full bg-gray-200 dark:bg-gray-700 text-sm">
-              <span className="h-8 w-8 rounded-full flex items-center justify-center text-slate-800 dark:text-white">
-                <User size={16} />
-              </span>
-            </button>
+            <UserProfileDropdown />
           </div>
         </div>
         

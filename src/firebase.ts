@@ -1,6 +1,7 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getAuth, Auth } from 'firebase/auth';
+import { getFunctions, Functions } from 'firebase/functions';
 
 // Firebase configuration interface
 interface FirebaseConfig {
@@ -66,14 +67,16 @@ try {
 // Initialize services
 let db: Firestore;
 let auth: Auth;
+let functions: Functions;
 
 try {
   db = getFirestore(app);
   auth = getAuth(app);
+  functions = getFunctions(app);
   console.log('✅ Firebase: Services initialized successfully');
 } catch (error) {
   console.error('❌ Firebase: Failed to initialize services:', error);
   throw error;
 }
 
-export { app, db, auth }; 
+export { app, db, auth, functions }; 

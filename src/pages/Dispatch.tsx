@@ -1830,7 +1830,8 @@ const Dispatch = () => {
     // Find technician row element under the mouse
     let hoverTechnicianId: string | null = null;
     const techRows = document.querySelectorAll('.technician-row');
-    for (const row of techRows) {
+    for (let i = 0; i < techRows.length; i++) {
+      const row = techRows[i];
       const rect = row.getBoundingClientRect();
       if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
         hoverTechnicianId = row.getAttribute('data-tech-id');
