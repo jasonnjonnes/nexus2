@@ -467,7 +467,7 @@ const Inbound: React.FC = () => {
   };
 
   // Dialpad CTI configuration
-  const dialpadClientId = import.meta.env.VITE_DIALPAD_CLIENT_ID || 'your_client_id_here';
+  const dialpadClientId = 'q3QPMk5mVP44sraUP7ngse3ER';
 
   const handleIncomingCall = (callData: any) => {
     console.log('Incoming call:', callData);
@@ -2518,7 +2518,7 @@ const Inbound: React.FC = () => {
         </div>
 
         {/* Dialpad CTI */}
-        {dialpadClientId && dialpadClientId !== 'your_client_id_here' && (
+        {dialpadClientId && (
           <DialpadCTI
             clientId={dialpadClientId}
             onIncomingCall={handleIncomingCall}

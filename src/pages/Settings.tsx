@@ -2385,7 +2385,7 @@ const Settings: React.FC = () => {
   const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
   const [technicians, setTechnicians] = useState<StaffMember[]>([]);
 
-  const loadStaff = async () => {
+  const loadStaff = useCallback(async () => {
     if (!db || !userId || !tenantId) return;
 
     const cacheKey = `staff_${tenantId}_${userId}`;
@@ -2419,14 +2419,14 @@ const Settings: React.FC = () => {
     } finally {
       cache.setLoading(cacheKey, false);
     }
-  };
+  }, [db, userId, tenantId, cache]);
 
   useEffect(() => {
     if (db && userId && tenantId) {
       setIsLoading(true);
       loadStaff().finally(() => setIsLoading(false));
     }
-  }, [db, userId, tenantId, cache]);
+  }, [loadStaff]);
 
   // Handle URL parameters for profile editing
   useEffect(() => {
