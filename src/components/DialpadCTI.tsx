@@ -26,17 +26,33 @@ const DialpadCTI: React.FC<DialpadCTIProps> = ({
   const dialpadVisible = isVisible !== undefined ? isVisible : internalIsVisible;
   const [incomingCall, setIncomingCall] = useState<any>(null);
 
+  // Initialize CTI when panel becomes visible
   useEffect(() => {
-    if (!containerRef.current || !clientId) {
-      console.log('DialpadCTI: Missing container or clientId', { container: !!containerRef.current, clientId });
+    if (!dialpadVisible || !clientId) {
       return;
     }
 
-    console.log('DialpadCTI: Initializing with clientId:', clientId);
-    // Initialize CTI
-    dialpadService.initializeCTI(clientId, containerRef.current);
+    // Wait for next tick to ensure DOM is rendered
+    const timer = setTimeout(() => {
+      if (!containerRef.current) {
+        console.log('DialpadCTI: Container not found after timeout', { container: !!containerRef.current, clientId });
+        return;
+      }
 
-    // Set up event listeners
+      console.log('DialpadCTI: Initializing with clientId:', clientId);
+      // Initialize CTI
+      dialpadService.initializeCTI(clientId, containerRef.current);
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [dialpadVisible, clientId]);
+
+  // Set up event listeners (separate from initialization)
+  useEffect(() => {
+    if (!clientId) return;
+
     const handleAuthentication = (data: { authenticated: boolean; userId: number | null }) => {
       setIsAuthenticated(data.authenticated);
       onAuthenticationChange?.(data.authenticated, data.userId);
@@ -64,9 +80,15 @@ const DialpadCTI: React.FC<DialpadCTIProps> = ({
     return () => {
       dialpadService.off('authentication', handleAuthentication);
       dialpadService.off('call_ringing', handleCallRinging);
+    };
+  }, [clientId, onAuthenticationChange, onIncomingCall, onToggleVisibility]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
       dialpadService.destroy();
     };
-  }, [clientId, onAuthenticationChange, onIncomingCall]);
+  }, []);
 
   const toggleVisibility = () => {
     if (onToggleVisibility) {

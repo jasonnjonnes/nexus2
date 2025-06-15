@@ -51,6 +51,16 @@ export class DialpadService {
    */
   initializeCTI(clientId: string, container: HTMLElement): void {
     console.log('DialpadService: Initializing CTI with clientId:', clientId);
+    
+    // Clean up any existing iframe first
+    if (this.ctiIframe) {
+      console.log('DialpadService: Cleaning up existing iframe');
+      this.destroy();
+    }
+    
+    // Clear the container
+    container.innerHTML = '';
+    
     const iframe = document.createElement('iframe');
     const iframeUrl = `https://dialpad.com/apps/${clientId}`;
     console.log('DialpadService: Creating iframe with URL:', iframeUrl);
@@ -237,12 +247,25 @@ export class DialpadService {
    * Destroy the CTI instance
    */
   destroy(): void {
-    if (this.ctiIframe && this.ctiIframe.parentNode) {
-      this.ctiIframe.parentNode.removeChild(this.ctiIframe);
+    console.log('DialpadService: Destroying CTI instance');
+    
+    if (this.ctiIframe) {
+      try {
+        if (this.ctiIframe.parentNode) {
+          this.ctiIframe.parentNode.removeChild(this.ctiIframe);
+        }
+      } catch (error) {
+        console.warn('DialpadService: Error removing iframe:', error);
+      }
       this.ctiIframe = null;
     }
+    
+    // Reset state
+    this.isAuthenticated = false;
+    this.currentUserId = null;
+    
+    // Clear event handlers
     this.eventHandlers.clear();
-    window.removeEventListener('message', this.handleMessage.bind(this));
   }
 }
 
