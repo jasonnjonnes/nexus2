@@ -22,10 +22,12 @@ import { BasicLogin } from './pages/BasicLogin';
 import { BasicRegister } from './pages/BasicRegister';
 import CompanyOnboarding from './pages/CompanyOnboarding';
 
+
 export default function App() {
   return (
     <FirebaseAuthProvider>
       <CacheProvider>
+
         <Router>
           <Routes>
             <Route path="/login" element={<BasicLogin />} />

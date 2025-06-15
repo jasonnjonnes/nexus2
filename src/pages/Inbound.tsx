@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, X, MapPin, Calendar, Plus, Phone, User, Building, Mail, MessageSquare, AlertCircle, 
-         Inbox, Users, MoreHorizontal, Bell, Settings, Filter, GripVertical, Reply, Forward, Paperclip } from 'lucide-react';
+         Inbox, Users, MoreHorizontal, Bell, Settings, Filter, GripVertical, Reply, Forward, Paperclip, PhoneCall } from 'lucide-react';
 import { db } from '../firebase';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import { useCache } from '../contexts/CacheContext';
@@ -83,7 +83,10 @@ import { useNavigate } from 'react-router-dom';
 import { NotificationProvider } from '../contexts/NotificationContext';
 import TopNavigation from '../components/TopNavigation';
 import DialpadCTI from '../components/DialpadCTI';
+import DialpadOAuthManager from '../components/DialpadOAuthManager';
 import FirebaseEmailInterface from '../components/FirebaseEmailInterface';
+import InboxCallsInterface from '../components/InboxCallsInterface';
+import InboxSMSInterface from '../components/InboxSMSInterface';
 
 // Helper function to generate job numbers
 const generateJobNumber = () => {
@@ -496,7 +499,10 @@ const Inbound: React.FC = () => {
   // Conversation state for inbox
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [selectedEmail, setSelectedEmail] = useState(null);
-  const [inboxView, setInboxView] = useState('conversations'); // 'conversations', 'team', 'calls', 'emails'
+  const [selectedCall, setSelectedCall] = useState(null);
+  const [selectedSMSThread, setSelectedSMSThread] = useState(null);
+  const [inboxView, setInboxView] = useState('conversations'); // 'conversations', 'team', 'calls', 'emails', 'my-inbox', 'company-inbox'
+  const [inboxSubView, setInboxSubView] = useState('calls'); // 'calls' or 'messages' for filtering
   const [isComposingEmail, setIsComposingEmail] = useState(false);
   const [emailComposeData, setEmailComposeData] = useState({
     to: '',
@@ -1879,17 +1885,17 @@ const Inbound: React.FC = () => {
                   <div className="w-16 bg-white dark:bg-slate-800 border-r border-gray-200 dark:border-slate-700 flex flex-col items-center py-4 space-y-4 h-full">
                     <div className="relative group">
                       <button 
-                        onClick={() => setInboxView('conversations')}
+                        onClick={() => setInboxView('my-inbox')}
                         className={`p-3 rounded-lg transition-colors ${
-                          inboxView === 'conversations' 
+                          inboxView === 'my-inbox' 
                             ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30' 
                             : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700'
                         }`}
                       >
-                        <Inbox size={20} />
+                        <User size={20} />
                       </button>
                       <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
-                        All Conversations
+                        My Inbox
                       </div>
                     </div>
                     <div className="relative group">
@@ -1904,7 +1910,7 @@ const Inbound: React.FC = () => {
                         <Users size={20} />
                       </button>
                       <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
-                        Team Inbox
+                        Team Messages
                       </div>
                     </div>
                     <div className="relative group">
@@ -1919,7 +1925,7 @@ const Inbound: React.FC = () => {
                         <Phone size={20} />
                       </button>
                       <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
-                        Calls
+                        All Calls
                       </div>
                     </div>
                     <div className="relative group">
@@ -1937,102 +1943,135 @@ const Inbound: React.FC = () => {
                         Emails
                       </div>
                     </div>
+                    <div className="relative group">
+                      <button 
+                        onClick={() => setInboxView('company-inbox')}
+                        className={`p-3 rounded-lg transition-colors ${
+                          inboxView === 'company-inbox' 
+                            ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30' 
+                            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <Building size={20} />
+                      </button>
+                      <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+                        Company Inbox
+                      </div>
+                    </div>
                   </div>
 
                   {/* Conversation list */}
                   <div className="w-80 bg-white dark:bg-slate-800 border-r border-gray-200 dark:border-slate-700 flex flex-col h-full">
-                    <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
-                      <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
-                        {inboxView === 'conversations' && 'All Conversations'}
-                        {inboxView === 'team' && 'Team Inbox'}
-                        {inboxView === 'calls' && 'Call History'}
-                        {inboxView === 'emails' && 'Email Inbox'}
-                      </h2>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-                        <input
-                          type="text"
-                          placeholder="Search conversations..."
-                          className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        />
+                    {/* Header with filtering for My Inbox and Company Inbox */}
+                    {(inboxView === 'my-inbox' || inboxView === 'company-inbox') && (
+                      <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
+                        {/* Dialpad OAuth Manager */}
+                        <div className="mb-4">
+                          <DialpadOAuthManager 
+                            onAuthenticationChange={(authenticated, user) => {
+                              console.log('Dialpad auth changed:', authenticated, user);
+                            }}
+                            className="w-full"
+                          />
+                        </div>
+                        
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                          {inboxView === 'my-inbox' && 'My Inbox'}
+                          {inboxView === 'company-inbox' && 'Company Inbox'}
+                        </h2>
+                        
+                        {/* Filter dropdown for calls vs messages */}
+                        <div className="mb-3">
+                          <select
+                            value={inboxSubView}
+                            onChange={(e) => setInboxSubView(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            <option value="calls">📞 Calls</option>
+                            <option value="messages">💬 Messages</option>
+                          </select>
+                        </div>
                       </div>
-                    </div>
+                    )}
+
+                    {/* Standard header for other views */}
+                    {!(inboxView === 'my-inbox' || inboxView === 'company-inbox') && (
+                      <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                          {inboxView === 'team' && 'Team Messages'}
+                          {inboxView === 'calls' && 'All Calls'}
+                          {inboxView === 'emails' && 'Email Inbox'}
+                        </h2>
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                          <input
+                            type="text"
+                            placeholder="Search..."
+                            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex-1 overflow-y-auto">
-                      {inboxView === 'conversations' && conversations.map((conversation) => (
-                        <div
-                          key={conversation.id}
-                          onClick={() => setSelectedConversation(conversation)}
-                          className={`p-4 border-b border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors ${
-                            selectedConversation?.id === conversation.id ? 'bg-blue-50 dark:bg-slate-700 border-l-4 border-l-blue-500' : ''
-                          }`}
-                        >
-                          <div className="flex items-start space-x-3">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium ${conversation.avatarColor}`}>
-                              {conversation.customer.split(' ').map(n => n[0]).join('')}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between mb-1">
-                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                                  {conversation.customer}
-                                </h3>
-                                <span className="text-xs text-gray-500 dark:text-gray-400">
-                                  {conversation.timestamp}
-                                </span>
-                              </div>
-                              <p className="text-sm text-gray-600 dark:text-gray-300 truncate mb-1">
-                                {conversation.lastMessage}
-                              </p>
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs text-gray-500 dark:text-gray-400">
-                                  {conversation.team}
-                                </span>
-                                {conversation.unread && (
-                                  <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                      {/* My Inbox - Calls or Messages */}
+                      {inboxView === 'my-inbox' && inboxSubView === 'calls' && (
+                        <InboxCallsInterface
+                          selectedCall={selectedCall}
+                          onCallSelect={setSelectedCall}
+                          viewMode="my-inbox"
+                          currentUserId={user?.uid ? parseInt(user.uid) : undefined}
+                        />
+                      )}
 
+                      {inboxView === 'my-inbox' && inboxSubView === 'messages' && (
+                        <InboxSMSInterface
+                          selectedThread={selectedSMSThread}
+                          onThreadSelect={setSelectedSMSThread}
+                          viewMode="my-inbox"
+                          currentUserId={user?.uid ? parseInt(user.uid) : undefined}
+                        />
+                      )}
+
+                      {/* Company Inbox - Calls or Messages */}
+                      {inboxView === 'company-inbox' && inboxSubView === 'calls' && (
+                        <InboxCallsInterface
+                          selectedCall={selectedCall}
+                          onCallSelect={setSelectedCall}
+                          viewMode="company-inbox"
+                          currentUserId={user?.uid ? parseInt(user.uid) : undefined}
+                        />
+                      )}
+
+                      {inboxView === 'company-inbox' && inboxSubView === 'messages' && (
+                        <InboxSMSInterface
+                          selectedThread={selectedSMSThread}
+                          onThreadSelect={setSelectedSMSThread}
+                          viewMode="company-inbox"
+                          currentUserId={user?.uid ? parseInt(user.uid) : undefined}
+                        />
+                      )}
+
+                      {/* Team Messages */}
                       {inboxView === 'team' && (
                         <div className="p-8 text-center">
                           <Users className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-4" />
-                          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Team Inbox</h3>
-                          <p className="text-gray-500 dark:text-gray-400">Shared conversations and team assignments will appear here</p>
+                          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Team Messages</h3>
+                          <p className="text-gray-500 dark:text-gray-400">Internal company messaging and team communications will appear here</p>
                         </div>
                       )}
 
+                      {/* All Calls */}
                       {inboxView === 'calls' && (
-                        <div className="space-y-2 p-2">
-                          <div className="p-3 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-lg cursor-pointer transition-colors">
-                            <div className="flex items-center space-x-3">
-                              <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
-                                <Phone size={16} className="text-green-600 dark:text-green-400" />
-                              </div>
-                              <div className="flex-1">
-                                <div className="font-medium text-gray-900 dark:text-gray-100">Sarah Johnson</div>
-                                <div className="text-sm text-gray-600 dark:text-gray-400">Incoming call • 2m ago</div>
-                              </div>
-                              <div className="text-xs text-green-600 dark:text-green-400">3 min</div>
-                            </div>
-                          </div>
-                          <div className="p-3 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-lg cursor-pointer transition-colors">
-                            <div className="flex items-center space-x-3">
-                              <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
-                                <Phone size={16} className="text-red-600 dark:text-red-400" />
-                              </div>
-                              <div className="flex-1">
-                                <div className="font-medium text-gray-900 dark:text-gray-100">Mike Wilson</div>
-                                <div className="text-sm text-gray-600 dark:text-gray-400">Missed call • 15m ago</div>
-                              </div>
-                              <div className="text-xs text-red-600 dark:text-red-400">Missed</div>
-                            </div>
-                          </div>
-                        </div>
+                        <InboxCallsInterface
+                          selectedCall={selectedCall}
+                          onCallSelect={setSelectedCall}
+                          viewMode="calls"
+                          currentUserId={user?.uid ? parseInt(user.uid) : undefined}
+                        />
                       )}
 
+                      {/* Emails */}
                       {inboxView === 'emails' && (
                         <FirebaseEmailInterface 
                           selectedEmail={selectedEmail}
@@ -2044,7 +2083,149 @@ const Inbound: React.FC = () => {
 
                   {/* Main conversation area */}
                   <div className="flex-1 flex flex-col bg-white dark:bg-slate-800 h-full overflow-hidden">
-                    {(selectedConversation && inboxView !== 'emails') ? (
+                    {/* Call Details View */}
+                    {selectedCall && (inboxView === 'my-inbox' || inboxView === 'company-inbox' || inboxView === 'calls') && inboxSubView === 'calls' ? (
+                      <>
+                        {/* Call header */}
+                        <div className="p-4 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex-shrink-0">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+                                <PhoneCall size={16} className="text-blue-600 dark:text-blue-400" />
+                              </div>
+                              <div>
+                                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                                  {selectedCall.customerName || `${selectedCall.direction === 'inbound' ? 'Call from' : 'Call to'} ${selectedCall.direction === 'inbound' ? selectedCall.from : selectedCall.to}`}
+                                </h2>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                  {selectedCall.direction === 'inbound' ? selectedCall.from : selectedCall.to} • {selectedCall.status} • {Math.floor(selectedCall.duration / 60)}m {selectedCall.duration % 60}s
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <button className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                                <Phone size={18} />
+                              </button>
+                              <button className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                                <MessageSquare size={18} />
+                              </button>
+                              <button className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                                <MoreHorizontal size={18} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Call details content */}
+                        <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-slate-800">
+                          <div className="space-y-4">
+                            <div className="bg-white dark:bg-slate-700 rounded-lg p-4">
+                              <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Call Details</h3>
+                              <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                  <span className="text-gray-500 dark:text-gray-400">Direction:</span>
+                                  <span className="ml-2 text-gray-900 dark:text-gray-100 capitalize">{selectedCall.direction}</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500 dark:text-gray-400">Status:</span>
+                                  <span className="ml-2 text-gray-900 dark:text-gray-100 capitalize">{selectedCall.status}</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500 dark:text-gray-400">Duration:</span>
+                                  <span className="ml-2 text-gray-900 dark:text-gray-100">{Math.floor(selectedCall.duration / 60)}m {selectedCall.duration % 60}s</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500 dark:text-gray-400">Time:</span>
+                                  <span className="ml-2 text-gray-900 dark:text-gray-100">{new Date(selectedCall.startTime).toLocaleString()}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {selectedCall.voicemailUrl && (
+                              <div className="bg-white dark:bg-slate-700 rounded-lg p-4">
+                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Voicemail</h3>
+                                <audio controls className="w-full">
+                                  <source src={selectedCall.voicemailUrl} type="audio/mpeg" />
+                                  Your browser does not support the audio element.
+                                </audio>
+                              </div>
+                            )}
+
+                            {selectedCall.recordingUrl && (
+                              <div className="bg-white dark:bg-slate-700 rounded-lg p-4">
+                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Call Recording</h3>
+                                <audio controls className="w-full">
+                                  <source src={selectedCall.recordingUrl} type="audio/mpeg" />
+                                  Your browser does not support the audio element.
+                                </audio>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    ) : /* SMS Thread View */
+                    selectedSMSThread && (inboxView === 'my-inbox' || inboxView === 'company-inbox') && inboxSubView === 'messages' ? (
+                      <>
+                        {/* SMS thread header */}
+                        <div className="p-4 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex-shrink-0">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
+                                <MessageSquare size={16} className="text-green-600 dark:text-green-400" />
+                              </div>
+                              <div>
+                                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                                  {selectedSMSThread.customerName || selectedSMSThread.phoneNumber}
+                                </h2>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                  {selectedSMSThread.phoneNumber}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <button className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                                <Phone size={18} />
+                              </button>
+                              <button className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                                <MoreHorizontal size={18} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* SMS messages area */}
+                        <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-slate-800">
+                          <div className="space-y-4 pb-60">
+                            {selectedSMSThread.messages.map((message) => (
+                              <div
+                                key={message.id}
+                                className={`flex ${message.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
+                              >
+                                <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                                  message.direction === 'outbound'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-slate-600'
+                                }`}>
+                                  <p className="text-sm">{message.body}</p>
+                                  <p className={`text-xs mt-1 ${
+                                    message.direction === 'outbound' 
+                                      ? 'text-blue-100' 
+                                      : 'text-gray-500 dark:text-gray-400'
+                                  }`}>
+                                    {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    {message.direction === 'outbound' && (
+                                      <span className="ml-2">
+                                        {message.status === 'delivered' ? '✓' : message.status === 'pending' ? '⏳' : '❌'}
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    ) : (selectedConversation && inboxView !== 'emails') ? (
                       <>
                         {/* Conversation header */}
                         <div className="p-4 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex-shrink-0">
@@ -2253,9 +2434,149 @@ const Inbound: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Right sidebar - Customer details */}
+                  {/* Right sidebar - Details */}
                   <div className="w-80 bg-gray-50 dark:bg-slate-900 border-l border-gray-200 dark:border-slate-700 p-4 h-full overflow-y-auto">
-                    {(selectedConversation && inboxView !== 'emails') && (
+                    {/* Call Details Sidebar */}
+                    {selectedCall && (inboxView === 'my-inbox' || inboxView === 'company-inbox' || inboxView === 'calls') && inboxSubView === 'calls' && (
+                      <div className="space-y-6">
+                        {/* Call Actions Section */}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Call Actions</h3>
+                          <div className="space-y-2">
+                            <button className="w-full text-left px-3 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center">
+                              <Phone size={14} className="mr-2" />
+                              Call Back
+                            </button>
+                            <button className="w-full text-left px-3 py-2 text-sm text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center">
+                              <MessageSquare size={14} className="mr-2" />
+                              Send SMS
+                            </button>
+                            <button className="w-full text-left px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center">
+                              <Building size={14} className="mr-2" />
+                              Create Job
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Call Information */}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Call Information</h3>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Call ID:</span>
+                              <span className="text-gray-900 dark:text-gray-100">{selectedCall.id}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Direction:</span>
+                              <span className="text-gray-900 dark:text-gray-100 capitalize">{selectedCall.direction}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Status:</span>
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                selectedCall.status === 'completed' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                selectedCall.status === 'missed' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                selectedCall.status === 'voicemail' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' :
+                                'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
+                              }`}>
+                                {selectedCall.status.charAt(0).toUpperCase() + selectedCall.status.slice(1)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Duration:</span>
+                              <span className="text-gray-900 dark:text-gray-100">{Math.floor(selectedCall.duration / 60)}m {selectedCall.duration % 60}s</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Customer Lookup */}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Customer Lookup</h3>
+                          <div className="space-y-2">
+                            <div className="text-sm">
+                              <span className="text-gray-600 dark:text-gray-400">Phone:</span>
+                              <div className="mt-1 text-gray-900 dark:text-gray-100">{selectedCall.direction === 'inbound' ? selectedCall.from : selectedCall.to}</div>
+                            </div>
+                            {selectedCall.customerName && (
+                              <div className="text-sm">
+                                <span className="text-gray-600 dark:text-gray-400">Customer:</span>
+                                <div className="mt-1 text-gray-900 dark:text-gray-100">{selectedCall.customerName}</div>
+                              </div>
+                            )}
+                            <button className="w-full text-left px-3 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                              Search Customers
+                            </button>
+                            <button className="w-full text-left px-3 py-2 text-sm text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                              Create New Customer
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SMS Thread Details Sidebar */}
+                    {selectedSMSThread && (inboxView === 'my-inbox' || inboxView === 'company-inbox') && inboxSubView === 'messages' && (
+                      <div className="space-y-6">
+                        {/* SMS Actions Section */}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Message Actions</h3>
+                          <div className="space-y-2">
+                            <button className="w-full text-left px-3 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center">
+                              <Phone size={14} className="mr-2" />
+                              Call Customer
+                            </button>
+                            <button className="w-full text-left px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center">
+                              <Building size={14} className="mr-2" />
+                              Create Job
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Thread Information */}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Thread Information</h3>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Phone:</span>
+                              <span className="text-gray-900 dark:text-gray-100">{selectedSMSThread.phoneNumber}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Messages:</span>
+                              <span className="text-gray-900 dark:text-gray-100">{selectedSMSThread.messages.length}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Unread:</span>
+                              <span className="text-gray-900 dark:text-gray-100">{selectedSMSThread.unreadCount}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Last Message:</span>
+                              <span className="text-gray-900 dark:text-gray-100">{new Date(selectedSMSThread.lastMessage.timestamp).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Customer Lookup */}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Customer Lookup</h3>
+                          <div className="space-y-2">
+                            {selectedSMSThread.customerName && (
+                              <div className="text-sm">
+                                <span className="text-gray-600 dark:text-gray-400">Customer:</span>
+                                <div className="mt-1 text-gray-900 dark:text-gray-100">{selectedSMSThread.customerName}</div>
+                              </div>
+                            )}
+                            <button className="w-full text-left px-3 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                              Search Customers
+                            </button>
+                            <button className="w-full text-left px-3 py-2 text-sm text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                              Create New Customer
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Team Conversation Details */}
+                    {(selectedConversation && inboxView === 'team') && (
                       <div className="space-y-6">
                         {/* Customer Details Section */}
                         <div>
@@ -2426,8 +2747,45 @@ const Inbound: React.FC = () => {
               )}
             </div>
 
+            {/* Floating compose area for SMS threads */}
+            {selectedSMSThread && activeTab === 'inbox' && (inboxView === 'my-inbox' || inboxView === 'company-inbox') && inboxSubView === 'messages' && (
+              <div className="fixed bottom-4 left-[calc(384px+4rem)] right-[calc(320px+4rem)] z-20">
+                <div style={{ width: '480px', margin: '0 auto' }}>
+                  {/* SMS compose tabs */}
+                  <div className="flex justify-center items-center space-x-6 mb-4">
+                    <button className="px-4 py-2 text-sm font-medium text-green-600 dark:text-green-400 border-b-2 border-green-500">
+                      💬 SMS Reply
+                    </button>
+                  </div>
+                  {/* Floating message box */}
+                  <div className="relative bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-xl shadow-lg">
+                    <textarea
+                      placeholder={`Send SMS to ${selectedSMSThread.customerName || selectedSMSThread.phoneNumber}...`}
+                      rows={3}
+                      className="w-full px-4 py-3 pr-16 border-0 rounded-xl bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-0 focus:outline-none resize-none text-sm"
+                    />
+                    {/* Floating send button in bottom right */}
+                    <button className="absolute bottom-3 right-3 w-10 h-10 bg-green-600 hover:bg-green-700 text-white rounded-full flex items-center justify-center transition-colors shadow-md">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 21L23 12L2 3V10L17 12L2 14V21Z" fill="currentColor"/>
+                      </svg>
+                    </button>
+                    {/* Toolbar at bottom left */}
+                    <div className="absolute bottom-3 left-3 flex items-center space-x-2">
+                      <button className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-600 rounded-md transition-colors">
+                        <Plus size={16} />
+                      </button>
+                      <button className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-600 rounded-md transition-colors">
+                        <Phone size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Floating compose area for conversations */}
-            {selectedConversation && activeTab === 'inbox' && inboxView !== 'emails' && (
+            {selectedConversation && activeTab === 'inbox' && inboxView === 'team' && (
               <div className="fixed bottom-4 left-[calc(384px+4rem)] right-[calc(320px+4rem)] z-20">
                 <div style={{ width: '480px', margin: '0 auto' }}>
                   {/* Reply/Private Note tabs - centered */}
