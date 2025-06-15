@@ -13,7 +13,7 @@ The following environment variables have been added to your `~/.zshrc` profile:
 export VITE_DIALPAD_CLIENT_ID="WnvSVq59wzv3eybNzWdFLKDY2"
 export VITE_DIALPAD_CLIENT_SECRET="wttBnWmqYHrEvDKDEtPzDV93tAzmfTqsM4tnA65wmVAbtX7Qw5"
 export VITE_DIALPAD_ENVIRONMENT="beta"
-export VITE_DIALPAD_REDIRECT_URI="https://pro.nexus.io/oauth/dialpad/callback"
+export VITE_DIALPAD_REDIRECT_URI="https://nexus2--servicepro-4c705.us-central1.hosted.app/oauth/dialpad/callback"
 ```
 
 ### Production Deployment Steps
@@ -26,7 +26,7 @@ When you get production credentials from Dialpad, update the environment variabl
 export VITE_DIALPAD_CLIENT_ID="your_production_client_id"
 export VITE_DIALPAD_CLIENT_SECRET="your_production_client_secret"
 export VITE_DIALPAD_ENVIRONMENT="production"
-export VITE_DIALPAD_REDIRECT_URI="https://pro.nexus.io/oauth/dialpad/callback"
+export VITE_DIALPAD_REDIRECT_URI="https://pro.nexusinc.io/oauth/dialpad/callback"
 ```
 
 #### 2. Firebase Hosting Deployment
@@ -56,7 +56,7 @@ environment:
   - VITE_DIALPAD_CLIENT_ID=your_client_id
   - VITE_DIALPAD_CLIENT_SECRET=your_client_secret
   - VITE_DIALPAD_ENVIRONMENT=production
-  - VITE_DIALPAD_REDIRECT_URI=https://pro.nexus.io/oauth/dialpad/callback
+  - VITE_DIALPAD_REDIRECT_URI=https://pro.nexusinc.io/oauth/dialpad/callback
 ```
 
 ### Security Notes
@@ -66,11 +66,25 @@ environment:
 3. **Secure your redirect URI** - Ensure HTTPS in production
 4. **Rotate credentials regularly** - Follow Dialpad's security best practices
 
+### Dialpad OAuth Callback URLs
+
+#### Register These Exact URLs with Dialpad:
+
+**Sandbox/Beta Environment:**
+- URL: `https://nexus2--servicepro-4c705.us-central1.hosted.app/oauth/dialpad/callback`
+- Environment: Beta/Sandbox
+- Use for: Development and testing
+
+**Production Environment:**
+- URL: `https://pro.nexusinc.io/oauth/dialpad/callback`
+- Environment: Production
+- Use for: Live production deployment
+
 ### Dialpad OAuth Application Setup
 
 #### For Production Environment:
 1. Submit a new OAuth application request to Dialpad for production
-2. Specify the redirect URI: `https://pro.nexus.io/oauth/dialpad/callback`
+2. Specify the redirect URI: `https://pro.nexusinc.io/oauth/dialpad/callback`
 3. Request the following scopes (if needed):
    - Basic access (no scopes required initially)
    - Additional scopes can be requested later as needed
@@ -78,7 +92,7 @@ environment:
 #### Current Beta Setup:
 - ✅ Client ID: `WnvSVq59wzv3eybNzWdFLKDY2`
 - ✅ Environment: `beta` (dialpadbeta.com)
-- ✅ Redirect URI: `https://pro.nexus.io/oauth/dialpad/callback`
+- ✅ Redirect URI: `https://nexus2--servicepro-4c705.us-central1.hosted.app/oauth/dialpad/callback` (sandbox)
 - ✅ Scopes: None (basic access)
 
 ### Testing the Deployment
