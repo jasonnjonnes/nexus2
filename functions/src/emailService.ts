@@ -320,6 +320,7 @@ export const addEmailAccount = functions.runWith(runtimeOpts).https.onCall(async
     switch (provider) {
       case 'gmail':
         oauthUrl = generateGmailOAuthUrl(accountRef.id);
+        console.log('Generated Gmail OAuth URL:', oauthUrl);
         break;
       case 'outlook':
         oauthUrl = generateOutlookOAuthUrl(accountRef.id);
@@ -391,7 +392,7 @@ export const getEmailAccounts = functions.runWith(runtimeOpts).https.onCall(asyn
 // Helper functions for OAuth URL generation
 function generateGmailOAuthUrl(accountId: string): string {
   const clientId = functions.config().oauth?.gmail?.client_id || process.env.GMAIL_CLIENT_ID;
-  const redirectUri = `${functions.config().oauth?.gmail?.redirect_uri || 'https://us-central1-servicepro-4c705.cloudfunctions.net/handleGmailOAuth'}?popup=true`;
+  const redirectUri = functions.config().oauth?.gmail?.redirect_uri || 'https://us-central1-servicepro-4c705.cloudfunctions.net/handleGmailOAuth';
   
   return `https://accounts.google.com/o/oauth2/v2/auth?` +
     `client_id=${clientId}&` +

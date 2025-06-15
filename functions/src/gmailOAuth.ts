@@ -48,41 +48,38 @@ export const handleGmailOAuth = functions.runWith(runtimeOpts).https.onRequest(a
       console.error('OAuth error:', error);
       const appUrl = origin || functions.config().app?.url || 'http://localhost:5173';
       const errorUrl = `${appUrl}/inbound?oauth_error=${error}`;
-      const isPopup = req.query.popup === 'true' || req.headers.referer?.includes('popup');
       
-      if (isPopup) {
-        // For popup mode, return HTML that sends error message to parent window
-        const html = `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>OAuth Error</title>
-          </head>
-          <body>
-            <script>
-              try {
-                if (window.opener) {
-                  window.opener.postMessage({
-                    type: 'OAUTH_ERROR',
-                    error: '${error}'
-                  }, '${appUrl}');
-                  window.close();
-                } else {
-                  window.location.href = '${errorUrl}';
-                }
-              } catch (err) {
-                console.error('Error sending message to parent:', err);
+      // Always return HTML that can handle both popup and redirect scenarios
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>OAuth Error</title>
+        </head>
+        <body>
+          <script>
+            try {
+              if (window.opener && !window.opener.closed) {
+                // This is a popup window
+                window.opener.postMessage({
+                  type: 'OAUTH_ERROR',
+                  error: '${error}'
+                }, '${appUrl}');
+                window.close();
+              } else {
+                // This is a redirect or popup without opener
                 window.location.href = '${errorUrl}';
               }
-            </script>
-            <p>Authentication failed: ${error}</p>
-          </body>
-          </html>
-        `;
-        res.send(html);
-      } else {
-        res.redirect(errorUrl);
-      }
+            } catch (err) {
+              console.error('Error handling OAuth error:', err);
+              window.location.href = '${errorUrl}';
+            }
+          </script>
+          <p>Authentication failed: ${error}</p>
+        </body>
+        </html>
+      `;
+      res.send(html);
       return;
     }
 
@@ -99,6 +96,8 @@ export const handleGmailOAuth = functions.runWith(runtimeOpts).https.onRequest(a
     const clientSecret = functions.config().oauth?.gmail?.client_secret;
     const redirectUri = functions.config().oauth?.gmail?.redirect_uri;
 
+    console.log('OAuth Configuration:', { clientId, redirectUri, hasClientSecret: !!clientSecret });
+
     if (!clientId || !clientSecret || !redirectUri) {
       console.error('Missing OAuth configuration');
       res.status(500).json({ error: 'OAuth configuration not found' });
@@ -107,9 +106,42 @@ export const handleGmailOAuth = functions.runWith(runtimeOpts).https.onRequest(a
 
     // Initialize Google OAuth2 client
     const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+    console.log('Attempting token exchange with redirect URI:', redirectUri);
 
-    // Exchange code for tokens
-    const { tokens } = await oauth2Client.getToken(code as string);
+    // Exchange code for tokens - try manual approach to debug redirect URI issue
+    console.log('Exchanging code for tokens with:', { code: code as string, redirectUri });
+    console.log('Full request URL:', req.url);
+    console.log('Request query params:', req.query);
+    
+    // Manual token exchange to debug the redirect URI issue
+    const tokenUrl = 'https://oauth2.googleapis.com/token';
+    const tokenParams = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code: code as string,
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri
+    });
+
+    console.log('Token exchange params:', Object.fromEntries(tokenParams.entries()));
+
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: tokenParams.toString()
+    });
+
+    const tokenData = await tokenResponse.json();
+    console.log('Token response status:', tokenResponse.status);
+    console.log('Token response:', tokenData);
+
+    if (!tokenResponse.ok) {
+      throw new Error(`Token exchange failed: ${JSON.stringify(tokenData)}`);
+    }
+
+    const tokens = tokenData;
 
     if (!tokens.access_token) {
       res.status(400).json({ error: 'Failed to obtain access token' });
@@ -166,44 +198,37 @@ export const handleGmailOAuth = functions.runWith(runtimeOpts).https.onRequest(a
     const appUrl = origin || functions.config().app?.url || 'http://localhost:5173';
     const successUrl = `${appUrl}/inbound?oauth_success=true&provider=gmail`;
     
-    // Check if this is a popup request (we can detect this by checking the referrer or a query parameter)
-    const isPopup = req.query.popup === 'true' || req.headers.referer?.includes('popup');
-    
-    if (isPopup) {
-      // For popup mode, return HTML that sends a message to parent window
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>OAuth Success</title>
-        </head>
-        <body>
-          <script>
-            try {
-              if (window.opener) {
-                window.opener.postMessage({
-                  type: 'OAUTH_SUCCESS',
-                  provider: 'gmail'
-                }, '${appUrl}');
-                window.close();
-              } else {
-                // Fallback if no opener
-                window.location.href = '${successUrl}';
-              }
-            } catch (error) {
-              console.error('Error sending message to parent:', error);
+    // Always return HTML that can handle both popup and redirect scenarios
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>OAuth Success</title>
+      </head>
+      <body>
+        <script>
+          try {
+            if (window.opener && !window.opener.closed) {
+              // This is a popup window
+              window.opener.postMessage({
+                type: 'OAUTH_SUCCESS',
+                provider: 'gmail'
+              }, '${appUrl}');
+              window.close();
+            } else {
+              // This is a redirect or popup without opener
               window.location.href = '${successUrl}';
             }
-          </script>
-          <p>Authentication successful! This window should close automatically.</p>
-        </body>
-        </html>
-      `;
-      res.send(html);
-    } else {
-      // For redirect mode, redirect normally
-      res.redirect(successUrl);
-    }
+          } catch (error) {
+            console.error('Error handling OAuth response:', error);
+            window.location.href = '${successUrl}';
+          }
+        </script>
+        <p>Authentication successful! This window should close automatically or redirect you back to the app.</p>
+      </body>
+      </html>
+    `;
+    res.send(html);
 
   } catch (error) {
     console.error('Error handling Gmail OAuth:', error);

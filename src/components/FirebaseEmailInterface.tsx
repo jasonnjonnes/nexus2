@@ -330,7 +330,7 @@ const FirebaseEmailInterface: React.FC = () => {
             const popup = window.open('', 'oauth', 'width=500,height=600,scrollbars=yes,resizable=yes');
             
             if (popup) {
-              // Navigate to OAuth URL in the popup
+              // Use the OAuth URL without adding popup parameter
               popup.location.href = response.oauthUrl;
               
               // Listen for messages from the popup

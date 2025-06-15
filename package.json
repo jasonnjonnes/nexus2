@@ -8,7 +8,12 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "node server.js"
+    "start": "node server.js",
+    "deploy": "./deploy-zero-downtime.sh",
+    "deploy:staging": "npm run build && firebase hosting:channel:deploy staging --expires 1h",
+    "deploy:production": "npm run build && firebase deploy",
+    "health-check": "./health-check.sh",
+    "test": "echo 'No tests specified' && exit 0"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
