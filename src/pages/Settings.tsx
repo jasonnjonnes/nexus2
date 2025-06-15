@@ -712,10 +712,8 @@ const StaffForm: React.FC<StaffFormProps> = ({ onCancel, onSave, staffType, edit
 interface StaffListProps {
   staffType: 'office' | 'technician';
   staff: StaffMember[];
-  onAdd: () => void;
   onEdit: (staff: StaffMember) => void;
   onDelete: (staffId: string) => void;
-  onShowForm: () => void;
   onSetEditingStaff: (staff: StaffMember | null) => void;
   onInvite: () => void;
 }
@@ -723,10 +721,8 @@ interface StaffListProps {
 const StaffList: React.FC<StaffListProps> = ({
   staffType,
   staff,
-  onAdd,
   onEdit,
   onDelete,
-  onShowForm,
   onSetEditingStaff,
   onInvite
 }) => {
@@ -749,31 +745,21 @@ const StaffList: React.FC<StaffListProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-100 dark:border-slate-700">
-      <div className="p-6 border-b border-gray-200 dark:border-slate-700">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100 capitalize">
-            {staffType} ({staff.length})
-          </h3>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={onInvite}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center"
-            >
-              <UserPlus size={16} className="mr-2" />
-              Invite {staffType === 'office' ? 'Office Staff' : 'Technician'}
-            </button>
-            <button
-              onClick={onShowForm}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-            >
-              <Plus size={16} className="mr-2" />
-              Add {staffType === 'office' ? 'Office Staff' : 'Technician'}
-            </button>
-          </div>
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">
+          {staffType === 'office' ? 'Office Staff' : 'Technicians'}
+        </h3>
+        <div className="flex items-center space-x-3">
+          <button 
+            onClick={onInvite}
+            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <UserPlus size={16} className="mr-2" />
+            {staffType === 'office' ? 'Add Office Staff' : 'Add Technician'}
+          </button>
         </div>
       </div>
-
       {staff.length === 0 ? (
         <div className="p-8 text-center">
           <User size={48} className="mx-auto text-gray-400 dark:text-gray-500 mb-4" />
@@ -784,7 +770,7 @@ const StaffList: React.FC<StaffListProps> = ({
             Get started by adding your first {staffType === 'office' ? 'office staff member' : 'technician'}.
           </p>
           <button
-            onClick={onAdd}
+            onClick={onInvite}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             Add {staffType === 'office' ? 'Office Staff' : 'Technician'}
@@ -2571,10 +2557,8 @@ const Settings: React.FC = () => {
             <StaffList
               staffType="office"
               staff={officeStaff}
-              onAdd={handleAddOfficeStaff}
               onEdit={handleEditOfficeStaff}
               onDelete={handleDeleteStaff}
-              onShowForm={() => setShowOfficeStaffForm(true)}
               onSetEditingStaff={setEditingOfficeStaff}
               onInvite={handleInviteOfficeStaff}
             />
@@ -2597,10 +2581,8 @@ const Settings: React.FC = () => {
             <StaffList
               staffType="technician"
               staff={technicians}
-              onAdd={handleAddTechnician}
               onEdit={handleEditTechnician}
               onDelete={handleDeleteStaff}
-              onShowForm={() => setShowTechnicianForm(true)}
               onSetEditingStaff={setEditingTechnician}
               onInvite={handleInviteTechnician}
             />

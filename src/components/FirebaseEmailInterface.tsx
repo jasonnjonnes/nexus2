@@ -3,7 +3,6 @@ import { Mail, Search, Star, Archive, Trash2, Reply, Forward, MoreHorizontal, Pa
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase';
-import GoogleSignInButton from './GoogleSignInButton';
 
 interface Email {
   id: string;
@@ -172,7 +171,7 @@ const FirebaseEmailInterface: React.FC = () => {
     }
   }, [tenantId, getEmailAccountsFunction]);
 
-  // Load emails on component mount and folder change with debounce
+  // Load emails on component mount and folder change
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       loadEmails().catch(error => {
@@ -203,72 +202,6 @@ const FirebaseEmailInterface: React.FC = () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showDropdown]);
-
-  // Handle OAuth callback
-  useEffect(() => {
-    const handleOAuthCallback = () => {
-      try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const oauthSuccess = urlParams.get('oauth_success');
-        const oauthError = urlParams.get('oauth_error');
-        const provider = urlParams.get('provider');
-        
-        if (oauthSuccess === 'true') {
-          // OAuth was successful
-          const storedProvider = sessionStorage.getItem('oauth_provider');
-          const returnUrl = sessionStorage.getItem('oauth_return_url');
-          
-          // Clean up session storage
-          sessionStorage.removeItem('oauth_provider');
-          sessionStorage.removeItem('oauth_return_url');
-          
-          // Show success message
-          setTimeout(() => {
-            alert(`${storedProvider || provider} account connected successfully!`);
-            
-            // Refresh email accounts
-            loadEmailAccounts().catch(error => {
-              console.error('Failed to refresh email accounts:', error);
-            });
-          }, 500);
-          
-          // Clean up URL parameters and redirect back
-          if (returnUrl) {
-            window.history.replaceState({}, document.title, returnUrl);
-          } else {
-            // Remove oauth parameters from URL
-            const cleanUrl = window.location.pathname;
-            window.history.replaceState({}, document.title, cleanUrl);
-          }
-        } else if (oauthError) {
-          // OAuth failed
-          const storedProvider = sessionStorage.getItem('oauth_provider');
-          const returnUrl = sessionStorage.getItem('oauth_return_url');
-          
-          // Clean up session storage
-          sessionStorage.removeItem('oauth_provider');
-          sessionStorage.removeItem('oauth_return_url');
-          
-          // Show error message
-          setTimeout(() => {
-            alert(`Failed to connect ${storedProvider || provider} account: ${oauthError}`);
-          }, 500);
-          
-          // Clean up URL and redirect back
-          if (returnUrl) {
-            window.history.replaceState({}, document.title, returnUrl);
-          } else {
-            const cleanUrl = window.location.pathname;
-            window.history.replaceState({}, document.title, cleanUrl);
-          }
-        }
-      } catch (error) {
-        console.error('Error handling OAuth callback:', error);
-      }
-    };
-
-    handleOAuthCallback();
-  }, [loadEmailAccounts]);
 
   // Refresh emails
   const handleRefresh = async () => {
@@ -318,86 +251,8 @@ const FirebaseEmailInterface: React.FC = () => {
       const response = result.data as any;
       
       if (response.success && response.oauthUrl) {
-        // Close the modal
         setShowAddAccount(false);
-        
-        // Store provider info for callback handling
-        sessionStorage.setItem('oauth_provider', provider);
-        sessionStorage.setItem('oauth_return_url', window.location.href);
-        
-        // For Gmail, use Google's recommended approach
-        if (provider === 'gmail') {
-          // Check if we're in a secure context and not localhost
-          const isSecureContext = window.isSecureContext && window.location.protocol === 'https:';
-          const isProduction = !window.location.hostname.includes('localhost');
-          
-          if (isSecureContext && isProduction) {
-            // Use popup mode for production HTTPS sites
-            try {
-              const popup = window.open(
-                response.oauthUrl, 
-                'gmail_oauth', 
-                'width=500,height=600,scrollbars=yes,resizable=yes,status=yes'
-              );
-              
-              if (popup) {
-                // Monitor popup for completion
-                const checkClosed = setInterval(() => {
-                  if (popup.closed) {
-                    clearInterval(checkClosed);
-                    // Refresh email accounts after popup closes
-                    setTimeout(() => {
-                      loadEmailAccounts().catch(console.error);
-                    }, 1000);
-                  }
-                }, 1000);
-                
-                // Listen for messages from the popup
-                const messageHandler = (event: MessageEvent) => {
-                  if (event.origin !== window.location.origin) return;
-                  
-                  if (event.data.type === 'OAUTH_SUCCESS') {
-                    clearInterval(checkClosed);
-                    popup.close();
-                    window.removeEventListener('message', messageHandler);
-                    alert(`${provider} account connected successfully!`);
-                    loadEmailAccounts().catch(console.error);
-                  } else if (event.data.type === 'OAUTH_ERROR') {
-                    clearInterval(checkClosed);
-                    popup.close();
-                    window.removeEventListener('message', messageHandler);
-                    alert(`Failed to connect ${provider} account: ${event.data.error}`);
-                  }
-                };
-                
-                window.addEventListener('message', messageHandler);
-                
-                // Cleanup timeout
-                setTimeout(() => {
-                  if (!popup.closed) {
-                    clearInterval(checkClosed);
-                    popup.close();
-                    window.removeEventListener('message', messageHandler);
-                    alert('OAuth window timed out. Please try again.');
-                  }
-                }, 300000); // 5 minutes timeout
-                
-              } else {
-                throw new Error('Popup blocked');
-              }
-            } catch (popupError) {
-              console.log('Popup failed, falling back to redirect:', popupError);
-              // Fallback to redirect method
-              window.location.href = response.oauthUrl;
-            }
-          } else {
-            // Use redirect mode for localhost or HTTP
-            window.location.href = response.oauthUrl;
-          }
-        } else {
-          // For other providers, use redirect
-          window.location.href = response.oauthUrl;
-        }
+        window.location.href = response.oauthUrl;
       } else {
         alert('Email account setup initiated, but OAuth URL not available.');
       }
@@ -405,42 +260,6 @@ const FirebaseEmailInterface: React.FC = () => {
       console.error('Error adding email account:', error);
       alert('Failed to add email account. Please try again.');
     }
-  };
-
-  // Handle Google Sign-In button success
-  const handleGoogleSignInSuccess = async (credentialResponse: any) => {
-    console.log('Google Sign-In Success:', credentialResponse);
-    
-    try {
-      // Close the modal
-      setShowAddAccount(false);
-      
-      // Here you would typically send the credential to your backend
-      // to exchange it for Gmail API access tokens
-      alert(`Google account connected: ${credentialResponse.user.email}`);
-      
-      // For now, we'll simulate adding the account
-      const newAccount: EmailAccount = {
-        id: `google-${Date.now()}`,
-        provider: 'gmail',
-        email: credentialResponse.user.email,
-        displayName: credentialResponse.user.name || credentialResponse.user.email,
-        isConnected: true,
-        lastSync: new Date()
-      };
-      
-      setEmailAccounts(prev => [...prev, newAccount]);
-      
-    } catch (error) {
-      console.error('Error processing Google Sign-In:', error);
-      alert('Failed to connect Google account. Please try again.');
-    }
-  };
-
-  // Handle Google Sign-In button error
-  const handleGoogleSignInError = (error: any) => {
-    console.error('Google Sign-In Error:', error);
-    alert('Google Sign-In failed. Please try again.');
   };
 
   // Sync Gmail emails
@@ -771,49 +590,18 @@ const FirebaseEmailInterface: React.FC = () => {
               </p>
               
               <div className="space-y-2">
-                {/* Gmail with both OAuth methods */}
-                <div className="border border-gray-300 dark:border-slate-600 rounded-lg p-3">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <div className="w-8 h-8 bg-red-500 rounded flex items-center justify-center">
-                      <Mail size={16} className="text-white" />
-                    </div>
-                    <div className="text-left">
-                      <div className="font-medium text-gray-900 dark:text-gray-100">Gmail</div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">Connect your Google account</div>
-                    </div>
+                <button
+                  onClick={() => handleAddEmailAccount('gmail', 'gmail')}
+                  className="w-full p-3 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center space-x-3"
+                >
+                  <div className="w-8 h-8 bg-red-500 rounded flex items-center justify-center">
+                    <Mail size={16} className="text-white" />
                   </div>
-                  
-                  <div className="space-y-2">
-                    {/* Google Sign-In Button (Recommended) */}
-                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-                      <strong>Recommended:</strong> Use Google's official Sign-In button
-                    </div>
-                    <GoogleSignInButton
-                      clientId="541335321876-17c70b30o9gujee9bquio61bjknpm4aq.apps.googleusercontent.com"
-                      onSuccess={handleGoogleSignInSuccess}
-                      onError={handleGoogleSignInError}
-                      text="continue_with"
-                      theme="outline"
-                      size="large"
-                      shape="rectangular"
-                    />
-                    
-                    {/* Divider */}
-                    <div className="flex items-center my-3">
-                      <div className="flex-1 border-t border-gray-300 dark:border-slate-600"></div>
-                      <span className="px-3 text-xs text-gray-500 dark:text-gray-400">OR</span>
-                      <div className="flex-1 border-t border-gray-300 dark:border-slate-600"></div>
-                    </div>
-                    
-                    {/* Traditional OAuth Button */}
-                    <button
-                      onClick={() => handleAddEmailAccount('gmail', 'gmail')}
-                      className="w-full p-2 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 text-sm text-gray-700 dark:text-gray-300"
-                    >
-                      Use Traditional OAuth (Advanced)
-                    </button>
+                  <div className="text-left">
+                    <div className="font-medium text-gray-900 dark:text-gray-100">Gmail</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">Connect your Google account</div>
                   </div>
-                </div>
+                </button>
                 
                 <button
                   onClick={() => handleAddEmailAccount('outlook', 'outlook')}
