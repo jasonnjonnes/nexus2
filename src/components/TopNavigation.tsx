@@ -24,6 +24,9 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ toggleSidebar, theme, tog
   // Dialpad configuration
   const dialpadClientId = import.meta.env.VITE_DIALPAD_CLIENT_ID;
   
+  // Debug: Log the client ID to console
+  console.log('TopNavigation: Dialpad Client ID:', dialpadClientId);
+  
   const handleIncomingCall = (callData: any) => {
     console.log('Incoming call:', callData);
     setIsDialpadOpen(true); // Auto-open dialpad on incoming call

@@ -28,7 +28,9 @@ const DialpadCTI: React.FC<DialpadCTIProps> = ({
 
   // Initialize CTI when panel becomes visible
   useEffect(() => {
+    console.log('DialpadCTI: useEffect triggered', { dialpadVisible, clientId });
     if (!dialpadVisible || !clientId) {
+      console.log('DialpadCTI: Skipping initialization', { dialpadVisible, clientId });
       return;
     }
 
