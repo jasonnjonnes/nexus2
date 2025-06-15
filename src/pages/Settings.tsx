@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronDown, ChevronRight, Search, Plus, X, User, Mail, Phone, MapPin, Calendar, Shield, Building, Camera, Edit, Palette, Upload, Image, UserPlus } from 'lucide-react';
 import { 
   Firestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, 
@@ -2357,6 +2357,7 @@ interface CompanyProfile {
 const Settings: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const [selectedItem, setSelectedItem] = useState('office');
   const [searchTerm, setSearchTerm] = useState('');
@@ -2398,8 +2399,14 @@ const Settings: React.FC = () => {
       return;
     }
 
+    // Check if already loading to prevent duplicate requests
+    if (cache.isLoading(cacheKey)) {
+      return;
+    }
+
     try {
       cache.setLoading(cacheKey, true);
+      setError(null);
       
       const staffRef = collection(db, 'tenants', tenantId, 'staff');
       const staffSnapshot = await getDocs(staffRef);
@@ -2416,16 +2423,49 @@ const Settings: React.FC = () => {
     } catch (err) {
       console.error('Error loading staff:', err);
       setError('Failed to load staff members. Please try again.');
+      // Clear cache on error to allow retry
+      cache.remove(cacheKey);
     } finally {
       cache.setLoading(cacheKey, false);
     }
-  }, [db, userId, tenantId, cache]);
+  }, [db, userId, tenantId]);
 
   useEffect(() => {
-    if (db && userId && tenantId) {
-      setIsLoading(true);
-      loadStaff().finally(() => setIsLoading(false));
-    }
+    let isMounted = true;
+    
+         const loadData = async () => {
+       if (db && userId && tenantId && isMounted) {
+         setIsLoading(true);
+         
+         // Set a timeout to prevent infinite loading
+         loadingTimeoutRef.current = setTimeout(() => {
+           if (isMounted) {
+             setIsLoading(false);
+             setError('Loading timeout. Please refresh the page.');
+           }
+         }, 10000); // 10 second timeout
+         
+         try {
+           await loadStaff();
+         } finally {
+           if (loadingTimeoutRef.current) {
+             clearTimeout(loadingTimeoutRef.current);
+           }
+           if (isMounted) {
+             setIsLoading(false);
+           }
+         }
+       }
+     };
+
+    loadData();
+
+    return () => {
+      isMounted = false;
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+      }
+    };
   }, [loadStaff]);
 
   // Handle URL parameters for profile editing
@@ -2558,8 +2598,21 @@ const Settings: React.FC = () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-slate-900">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <p className="ml-4 text-gray-600 dark:text-gray-300">Loading...</p>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-300">Loading settings...</p>
+          {error && (
+            <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
+              <button 
+                onClick={() => window.location.reload()} 
+                className="mt-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
+              >
+                Refresh Page
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
