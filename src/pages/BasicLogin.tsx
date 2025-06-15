@@ -16,6 +16,7 @@ export function BasicLogin() {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
   const [forgotPasswordMessage, setForgotPasswordMessage] = useState('');
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
   const { user, login, error, loading, signInWithGoogle, sendPasswordReset } = useFirebaseAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -30,9 +31,34 @@ export function BasicLogin() {
     }
   }, [user, loading, navigate, from]);
 
+  // Add reCAPTCHA callback to window object
+  useEffect(() => {
+    (window as any).onRecaptchaSubmit = (token: string) => {
+      setRecaptchaToken(token);
+      // Trigger form submission after reCAPTCHA validation
+      handleLoginWithRecaptcha(token);
+    };
+
+    return () => {
+      delete (window as any).onRecaptchaSubmit;
+    };
+  }, [email, password]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Prevent default form submission - reCAPTCHA will handle it
+    return false;
+  };
+
+  const handleLoginWithRecaptcha = async (token: string) => {
     setSmartError(null);
+    
+    if (!token) {
+      setSmartError({
+        message: 'Please complete the reCAPTCHA verification'
+      });
+      return;
+    }
     
     // Use smart sign-in to detect auth method issues
     const smartResult = await AuthMethodService.smartSignIn(email, password);
@@ -92,7 +118,7 @@ export function BasicLogin() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: '#fff' }}>
         {/* Spacer for logo */}
         <div style={{ height: 120 }} />
-        <form onSubmit={handleLogin} style={{ width: 320, margin: '24px 0 0 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <form id="login-form" onSubmit={handleLogin} style={{ width: 320, margin: '24px 0 0 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8, textAlign: 'left' }}>Sign in</h2>
           <input
             type="email"
@@ -111,11 +137,24 @@ export function BasicLogin() {
             required
           />
           <button
-            type="submit"
-            disabled={loading}
-            style={{ background: '#1a237e', color: 'white', padding: '12px 0', borderRadius: 6, fontWeight: 600, fontSize: 16, border: 'none', marginTop: 8 }}
+            className="g-recaptcha"
+            data-sitekey="6LdGg2ErAAAAAOIhI_8YvuA9s9HuV6K4TY2JFVf6"
+            data-callback="onRecaptchaSubmit"
+            data-action="submit"
+            disabled={loading || !email || !password}
+            style={{ 
+              background: (!email || !password) ? '#9ca3af' : '#1a237e', 
+              color: 'white', 
+              padding: '12px 0', 
+              borderRadius: 6, 
+              fontWeight: 600, 
+              fontSize: 16, 
+              border: 'none', 
+              marginTop: 8,
+              cursor: (!email || !password) ? 'not-allowed' : 'pointer'
+            }}
           >
-            Sign In
+            {loading ? 'Signing In...' : 'Sign In'}
           </button>
         </form>
         <div style={{ width: 320, margin: '24px 0 0 0', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
