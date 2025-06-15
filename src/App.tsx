@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import BasicProtectedRoute from './components/BasicProtectedRoute';
 import Layout from './components/Layout';
 import { FirebaseAuthProvider } from './contexts/FirebaseAuthContext';
+import { CacheProvider } from './contexts/CacheContext';
 import Dashboard from './pages/Dashboard';
 import Customers from './pages/Customers';
 import Pricebook from './pages/Pricebook';
@@ -18,146 +19,150 @@ import Accounting from './pages/Accounting';
 import Schedule from './pages/Schedule';
 import { Unauthorized } from './pages/Unauthorized';
 import { BasicLogin } from './pages/BasicLogin';
+import { BasicRegister } from './pages/BasicRegister';
 import CompanyOnboarding from './pages/CompanyOnboarding';
 
 export default function App() {
   return (
     <FirebaseAuthProvider>
-      <Router>
-        <Routes>
-          <Route path="/login" element={<BasicLogin />} />
-          <Route path="/onboarding" element={<CompanyOnboarding />} />
-          <Route path="/unauthorized" element={<Unauthorized />} />
-          <Route
-            path="/"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Dashboard />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/customers"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Customers />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/job/:jobId"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <JobDetail />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/invoice/:invoiceId"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <InvoiceDetail />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/estimate/:estimateId"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <EstimateDetail />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/pricebook"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Pricebook />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Settings />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/payroll"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Payroll />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/dispatch"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Dispatch />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/inbound"
-            element={
-              <BasicProtectedRoute>
-                <Inbound />
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/automations"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Automations />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/accounting"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Accounting />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-          <Route
-            path="/schedule"
-            element={
-              <BasicProtectedRoute>
-                <Layout>
-                  <Schedule />
-                </Layout>
-              </BasicProtectedRoute>
-            }
-          />
-        </Routes>
-      </Router>
+      <CacheProvider>
+        <Router>
+          <Routes>
+            <Route path="/login" element={<BasicLogin />} />
+            <Route path="/signup" element={<BasicRegister />} />
+            <Route path="/onboarding" element={<CompanyOnboarding />} />
+            <Route path="/unauthorized" element={<Unauthorized />} />
+            <Route
+              path="/"
+              element={
+                <BasicProtectedRoute>
+                  <Layout>
+                    <Dashboard />
+                  </Layout>
+                </BasicProtectedRoute>
+              }
+            />
+            <Route
+              path="/customers"
+              element={
+                <BasicProtectedRoute>
+                  <Layout>
+                    <Customers />
+                  </Layout>
+                </BasicProtectedRoute>
+              }
+            />
+            <Route
+              path="/job/:jobId"
+              element={
+                <BasicProtectedRoute>
+                  <Layout>
+                    <JobDetail />
+                  </Layout>
+                </BasicProtectedRoute>
+              }
+            />
+            <Route
+              path="/invoice/:invoiceId"
+              element={
+                <BasicProtectedRoute>
+                  <Layout>
+                    <InvoiceDetail />
+                  </Layout>
+                </BasicProtectedRoute>
+              }
+            />
+            <Route
+              path="/estimate/:estimateId"
+              element={
+                <BasicProtectedRoute>
+                  <Layout>
+                    <EstimateDetail />
+                  </Layout>
+                </BasicProtectedRoute>
+              }
+            />
+            <Route
+              path="/pricebook"
+              element={
+                <BasicProtectedRoute>
+                  <Layout>
+                    <Pricebook />
+                  </Layout>
+                </BasicProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <BasicProtectedRoute>
+                  <Layout>
+                    <Settings />
+                  </Layout>
+                </BasicProtectedRoute>
+              }
+            />
+            <Route
+              path="/payroll"
+              element={
+                <BasicProtectedRoute>
+                  <Layout>
+                    <Payroll />
+                  </Layout>
+                </BasicProtectedRoute>
+              }
+            />
+            <Route
+              path="/dispatch"
+              element={
+                <BasicProtectedRoute>
+                  <Layout>
+                    <Dispatch />
+                  </Layout>
+                </BasicProtectedRoute>
+              }
+            />
+            <Route
+              path="/inbound"
+              element={
+                <BasicProtectedRoute>
+                  <Inbound />
+                </BasicProtectedRoute>
+              }
+            />
+            <Route
+              path="/automations"
+              element={
+                <BasicProtectedRoute>
+                  <Layout>
+                    <Automations />
+                  </Layout>
+                </BasicProtectedRoute>
+              }
+            />
+            <Route
+              path="/accounting"
+              element={
+                <BasicProtectedRoute>
+                  <Layout>
+                    <Accounting />
+                  </Layout>
+                </BasicProtectedRoute>
+              }
+            />
+            <Route
+              path="/schedule"
+              element={
+                <BasicProtectedRoute>
+                  <Layout>
+                    <Schedule />
+                  </Layout>
+                </BasicProtectedRoute>
+              }
+            />
+          </Routes>
+        </Router>
+      </CacheProvider>
     </FirebaseAuthProvider>
   );
 }

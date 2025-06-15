@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, Calendar, Truck, GitBranch, FileText, 
-  DollarSign, Users, Search, Bell, Settings, User, ClipboardList, BookOpen
+  DollarSign, Users, Search, Bell, Settings, User, ClipboardList, BookOpen, Phone
 } from 'lucide-react';
 import DarkModeToggle from './DarkModeToggle';
 import GlobalSearch from './GlobalSearch';
 import NotificationDropdown from './NotificationDropdown';
 import UserProfileDropdown from './UserProfileDropdown';
+import DialpadCTI from './DialpadCTI';
 
 interface TopNavigationProps {
   toggleSidebar: () => void;
@@ -18,6 +19,19 @@ interface TopNavigationProps {
 const TopNavigation: React.FC<TopNavigationProps> = ({ toggleSidebar, theme, toggleTheme }) => {
   const navigate = useNavigate();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isDialpadOpen, setIsDialpadOpen] = useState(false);
+  
+  // Dialpad configuration
+  const dialpadClientId = import.meta.env.VITE_DIALPAD_CLIENT_ID || 'q3QPMk5mVP44sraUP7ngse3ER';
+  
+  const handleIncomingCall = (callData: any) => {
+    console.log('Incoming call:', callData);
+    setIsDialpadOpen(true); // Auto-open dialpad on incoming call
+  };
+
+  const handleDialpadAuth = (authenticated: boolean, userId: number | null) => {
+    console.log('Dialpad authentication changed:', { authenticated, userId });
+  };
   
   const navLinkClasses = ({ isActive }: { isActive: boolean }) => 
     `flex items-center px-3 py-4 text-sm font-medium transition-colors duration-150 ${
@@ -48,6 +62,16 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ toggleSidebar, theme, tog
             </div>
             {/* Mobile Icons */}
             <div className="flex items-center gap-2 md:hidden">
+              {/* Mobile Dialpad Button */}
+              {dialpadClientId && (
+                <button 
+                  onClick={() => setIsDialpadOpen(!isDialpadOpen)}
+                  className="p-1 rounded-full text-gray-500 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white"
+                  title="Open Dialpad"
+                >
+                  <Phone size={18} />
+                </button>
+              )}
               <DarkModeToggle theme={theme} toggleTheme={toggleTheme} />
               <NotificationDropdown />
               <button onClick={() => navigate('/settings')} className="p-1 rounded-full text-gray-500 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white">
@@ -75,6 +99,16 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ toggleSidebar, theme, tog
           
           {/* Desktop Icons */}
           <div className="hidden md:flex md:items-center md:gap-3">
+            {/* Dialpad Button */}
+            {dialpadClientId && (
+              <button 
+                onClick={() => setIsDialpadOpen(!isDialpadOpen)}
+                className="p-2 rounded-full text-gray-500 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                title="Open Dialpad"
+              >
+                <Phone size={18} />
+              </button>
+            )}
             <DarkModeToggle theme={theme} toggleTheme={toggleTheme} />
             <NotificationDropdown />
             <button onClick={() => navigate('/settings')} className="p-1 rounded-full text-gray-500 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white">
@@ -128,9 +162,59 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ toggleSidebar, theme, tog
           if (e.key === 'Escape' && isSearchOpen) {
             setIsSearchOpen(false);
           }
+          if (e.key === 'Escape' && isDialpadOpen) {
+            setIsDialpadOpen(false);
+          }
         }}
         tabIndex={-1}
       />
+
+      {/* Dialpad CTI */}
+      {dialpadClientId && (
+        <DialpadCTI
+          clientId={dialpadClientId}
+          onIncomingCall={handleIncomingCall}
+          onAuthenticationChange={handleDialpadAuth}
+          isVisible={isDialpadOpen}
+          onToggleVisibility={() => setIsDialpadOpen(!isDialpadOpen)}
+          className={isDialpadOpen ? 'dialpad-visible' : 'dialpad-hidden'}
+        />
+      )}
+
+      {/* Dialpad Modal Overlay */}
+      {isDialpadOpen && dialpadClientId && (
+        <div className="fixed inset-0 bg-black bg-opacity-25 z-40 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-2xl border border-gray-200 dark:border-slate-700 max-w-md w-full">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700">
+              <div className="flex items-center gap-2">
+                <Phone size={20} className="text-blue-600 dark:text-blue-400" />
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Dialpad</h3>
+              </div>
+              <button
+                onClick={() => setIsDialpadOpen(false)}
+                className="p-1 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            </div>
+            
+            {/* Dialpad Content */}
+            <div className="p-4">
+              <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                <Phone size={48} className="mx-auto mb-4 opacity-50" />
+                <p className="text-lg font-medium mb-2">Dialpad Integration</p>
+                <p className="text-sm">Configure your Dialpad Client ID in environment variables to enable calling functionality.</p>
+                <div className="mt-4 p-3 bg-gray-100 dark:bg-slate-700 rounded-lg text-xs font-mono">
+                  VITE_DIALPAD_CLIENT_ID=your_actual_client_id
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

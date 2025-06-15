@@ -1,8 +1,63 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, X, MapPin, Calendar, Plus, Phone, User, Building, Mail, MessageSquare, AlertCircle, 
-         Inbox, Users, MoreHorizontal, Bell, Settings, Filter, GripVertical } from 'lucide-react';
+         Inbox, Users, MoreHorizontal, Bell, Settings, Filter, GripVertical, Reply, Forward, Paperclip } from 'lucide-react';
 import { db } from '../firebase';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import { useCache } from '../contexts/CacheContext';
+
+// Helper function to safely format dates
+const formatEmailDate = (dateValue: any): string => {
+  if (!dateValue) return 'Unknown';
+  
+  try {
+    let date: Date;
+    
+    // Handle Firebase Timestamp objects
+    if (dateValue && typeof dateValue === 'object' && dateValue.seconds) {
+      date = new Date(dateValue.seconds * 1000);
+    }
+    // Handle Firebase Timestamp with toDate method
+    else if (dateValue && typeof dateValue.toDate === 'function') {
+      date = dateValue.toDate();
+    }
+    // Handle regular date objects or strings
+    else {
+      date = new Date(dateValue);
+    }
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return 'Unknown';
+    }
+    
+    return date.toLocaleString();
+  } catch (error) {
+    console.warn('Error formatting date:', error);
+    return 'Unknown';
+  }
+};
+
+// Helper function to sanitize and style HTML content
+const sanitizeEmailHTML = (htmlContent: string): string => {
+  if (!htmlContent) return '';
+  
+  // Basic HTML sanitization - remove potentially dangerous elements and attributes
+  let sanitized = htmlContent
+    .replace(/<script[^>]*>.*?<\/script>/gi, '')
+    .replace(/<iframe[^>]*>.*?<\/iframe>/gi, '')
+    .replace(/<object[^>]*>.*?<\/object>/gi, '')
+    .replace(/<embed[^>]*>/gi, '')
+    .replace(/on\w+="[^"]*"/gi, '') // Remove event handlers
+    .replace(/javascript:/gi, ''); // Remove javascript: links
+  
+  // Add responsive styles to images
+  sanitized = sanitized.replace(/<img([^>]*?)>/gi, '<img$1 style="max-width: 100%; height: auto; border-radius: 4px;">');
+  
+  // Style links
+  sanitized = sanitized.replace(/<a([^>]*?)>/gi, '<a$1 style="color: #3b82f6; text-decoration: underline;" target="_blank" rel="noopener noreferrer">');
+  
+  return sanitized;
+};
 import {
   collection,
   addDoc,
@@ -388,6 +443,7 @@ const Inbound: React.FC = () => {
 
   const { user, tenantId } = useFirebaseAuth();
   const userId = user?.uid || null;
+  const cache = useCache();
 
   // Theme handling (previously in Layout)
   const getInitialTheme = () => {
@@ -430,7 +486,17 @@ const Inbound: React.FC = () => {
 
   // Conversation state for inbox
   const [selectedConversation, setSelectedConversation] = useState(null);
+  const [selectedEmail, setSelectedEmail] = useState(null);
   const [inboxView, setInboxView] = useState('conversations'); // 'conversations', 'team', 'calls', 'emails'
+  const [isComposingEmail, setIsComposingEmail] = useState(false);
+  const [emailComposeData, setEmailComposeData] = useState({
+    to: '',
+    cc: '',
+    bcc: '',
+    subject: '',
+    body: '',
+    attachments: [] as File[]
+  });
   const [conversations, setConversations] = useState([
     {
       id: 1,
@@ -697,6 +763,31 @@ const Inbound: React.FC = () => {
     return total + section.items.filter(item => item.unread).length;
   }, 0);
 
+  // Email handlers
+  const handleEmailReply = (email) => {
+    setEmailComposeData({
+      to: email.from,
+      cc: '',
+      bcc: '',
+      subject: email.subject.startsWith('Re: ') ? email.subject : `Re: ${email.subject}`,
+      body: `\n\n--- Original Message ---\nFrom: ${email.from}\nTo: ${email.to}\nSubject: ${email.subject}\n\n${email.body}`,
+      attachments: []
+    });
+    setIsComposingEmail(true);
+  };
+
+  const handleEmailForward = (email) => {
+    setEmailComposeData({
+      to: '',
+      cc: '',
+      bcc: '',
+      subject: email.subject.startsWith('Fwd: ') ? email.subject : `Fwd: ${email.subject}`,
+      body: `\n\n--- Forwarded Message ---\nFrom: ${email.from}\nTo: ${email.to}\nSubject: ${email.subject}\nDate: ${email.receivedAt ? new Date(email.receivedAt.seconds ? email.receivedAt.seconds * 1000 : email.receivedAt).toLocaleString() : 'Unknown'}\n\n${email.body}`,
+      attachments: []
+    });
+    setIsComposingEmail(true);
+  };
+
   // Manage loading state
   useEffect(() => {
     if (db && userId && tenantId) {
@@ -704,123 +795,230 @@ const Inbound: React.FC = () => {
     }
   }, [db, userId, tenantId]);
 
-  // Load customers
+  // Load customers with caching
   useEffect(() => {
     if (!db || !userId || !tenantId) return;
 
-    const q = query(
-      collection(db, 'tenants', tenantId, 'customers'),
-      where("userId", "==", userId)
-    );
-    
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const customersData = [];
-      querySnapshot.forEach((doc) => {
-        customersData.push({ id: doc.id, ...doc.data() });
-      });
-      setCustomers(customersData);
-    }, (error) => {
-      console.error("Error loading customers:", error);
-    });
-    
-    return () => unsubscribe();
-  }, [db, userId, tenantId]);
-
-  // Load business units
-  useEffect(() => {
-    if (!db || !userId || !tenantId) return;
-
-    const businessUnitsQuery = query(
-      collection(db, 'tenants', tenantId, 'businessUnits'),
-      where("userId", "==", userId),
-      where("status", "==", "active")
-    );
-    
-    const unsubscribe = onSnapshot(businessUnitsQuery, (querySnapshot) => {
-      const businessUnitsData = [];
-      querySnapshot.forEach((doc) => {
-        businessUnitsData.push({ id: doc.id, ...doc.data() });
-      });
-      setBusinessUnits(businessUnitsData);
-    }, (error) => {
-      console.error("Error loading business units:", error);
-    });
-    
-    return () => unsubscribe();
-  }, [db, userId, tenantId]);
-
-  // Load job types
-  useEffect(() => {
-    if (!db || !userId || !tenantId) return;
-
-    const jobTypesQuery = query(
-      collection(db, 'tenants', tenantId, 'jobTypes'),
-      where("userId", "==", userId),
-      where("status", "==", "active")
-    );
-    
-    const unsubscribe = onSnapshot(jobTypesQuery, (querySnapshot) => {
-      const jobTypesData = [];
-      querySnapshot.forEach((doc) => {
-        jobTypesData.push({ id: doc.id, ...doc.data() });
-      });
+    const loadCustomers = async () => {
+      const cacheKey = `customers_${tenantId}_${userId}`;
       
-      // If no job types found, use defaults
-      if (jobTypesData.length === 0) {
-        setJobTypes([
-          { id: 'default-1', name: 'AC Repair' },
-          { id: 'default-2', name: 'HVAC Maintenance' },
-          { id: 'default-3', name: 'Plumbing Repair' },
-          { id: 'default-4', name: 'Electrical Work' },
-          { id: 'default-5', name: 'System Installation' }
-        ]);
-      } else {
-        setJobTypes(jobTypesData);
+      // Try to get from cache first
+      const cachedCustomers = cache.get<any[]>(cacheKey);
+      if (cachedCustomers) {
+        setCustomers(cachedCustomers);
+        return;
       }
-    }, (error) => {
-      console.error("Error loading job types:", error);
-      // Fallback to default job types
-      setJobTypes([
-        { id: 'default-1', name: 'AC Repair' },
-        { id: 'default-2', name: 'HVAC Maintenance' },
-        { id: 'default-3', name: 'Plumbing Repair' },
-        { id: 'default-4', name: 'Electrical Work' },
-        { id: 'default-5', name: 'System Installation' }
-      ]);
-    });
-    
-    return () => unsubscribe();
-  }, [db, userId, tenantId]);
 
-  // Load active technicians
+      // If not in cache, load from Firebase
+      try {
+        cache.setLoading(cacheKey, true);
+        
+        const q = query(
+          collection(db, 'tenants', tenantId, 'customers'),
+          where("userId", "==", userId)
+        );
+        
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+          const customersData = [];
+          querySnapshot.forEach((doc) => {
+            customersData.push({ id: doc.id, ...doc.data() });
+          });
+          
+          // Update cache and state
+          cache.set(cacheKey, customersData, 15); // Cache for 15 minutes
+          setCustomers(customersData);
+          cache.setLoading(cacheKey, false);
+        }, (error) => {
+          console.error("Error loading customers:", error);
+          cache.setLoading(cacheKey, false);
+        });
+        
+        return () => unsubscribe();
+      } catch (error) {
+        console.error("Error setting up customers listener:", error);
+        cache.setLoading(cacheKey, false);
+      }
+    };
+
+    loadCustomers();
+  }, [db, userId, tenantId, cache]);
+
+  // Load business units with caching
   useEffect(() => {
     if (!db || !userId || !tenantId) return;
 
-    const techQuery = query(
-      collection(db, 'tenants', tenantId, 'staff'),
-      where("userId", "==", userId),
-      where("staffType", "==", "technician"),
-      where("status", "==", "active")
-    );
-    
-    const unsubscribe = onSnapshot(techQuery, (querySnapshot) => {
-      const techData = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        techData.push({
-          id: doc.id,
-          name: data.fullName || `${data.firstName} ${data.lastName}`,
-          role: data.role,
-          businessUnit: data.businessUnit
+    const loadBusinessUnits = async () => {
+      const cacheKey = `business_units_${tenantId}_${userId}`;
+      
+      // Try to get from cache first
+      const cachedBusinessUnits = cache.get<any[]>(cacheKey);
+      if (cachedBusinessUnits) {
+        setBusinessUnits(cachedBusinessUnits);
+        return;
+      }
+
+      // If not in cache, load from Firebase
+      try {
+        cache.setLoading(cacheKey, true);
+        
+        const businessUnitsQuery = query(
+          collection(db, 'tenants', tenantId, 'businessUnits'),
+          where("userId", "==", userId),
+          where("status", "==", "active")
+        );
+        
+        const unsubscribe = onSnapshot(businessUnitsQuery, (querySnapshot) => {
+          const businessUnitsData = [];
+          querySnapshot.forEach((doc) => {
+            businessUnitsData.push({ id: doc.id, ...doc.data() });
+          });
+          
+          // Update cache and state
+          cache.set(cacheKey, businessUnitsData, 60); // Cache for 1 hour
+          setBusinessUnits(businessUnitsData);
+          cache.setLoading(cacheKey, false);
+        }, (error) => {
+          console.error("Error loading business units:", error);
+          cache.setLoading(cacheKey, false);
         });
-      });
-      setTechnicians(techData);
-    }, (error) => {
-      console.error("Error loading technicians:", error);
-    });
-    
-    return () => unsubscribe();
-  }, [db, userId, tenantId]);
+        
+        return () => unsubscribe();
+      } catch (error) {
+        console.error("Error setting up business units listener:", error);
+        cache.setLoading(cacheKey, false);
+      }
+    };
+
+    loadBusinessUnits();
+  }, [db, userId, tenantId, cache]);
+
+  // Load job types with caching
+  useEffect(() => {
+    if (!db || !userId || !tenantId) return;
+
+    const loadJobTypes = async () => {
+      const cacheKey = `job_types_${tenantId}_${userId}`;
+      
+      // Try to get from cache first
+      const cachedJobTypes = cache.get<any[]>(cacheKey);
+      if (cachedJobTypes) {
+        setJobTypes(cachedJobTypes);
+        return;
+      }
+
+      // If not in cache, load from Firebase
+      try {
+        cache.setLoading(cacheKey, true);
+        
+        const jobTypesQuery = query(
+          collection(db, 'tenants', tenantId, 'jobTypes'),
+          where("userId", "==", userId),
+          where("status", "==", "active")
+        );
+        
+        const unsubscribe = onSnapshot(jobTypesQuery, (querySnapshot) => {
+          const jobTypesData = [];
+          querySnapshot.forEach((doc) => {
+            jobTypesData.push({ id: doc.id, ...doc.data() });
+          });
+          
+          // If no job types found, use defaults
+          if (jobTypesData.length === 0) {
+            const defaultJobTypes = [
+              { id: 'default-1', name: 'AC Repair' },
+              { id: 'default-2', name: 'HVAC Maintenance' },
+              { id: 'default-3', name: 'Plumbing Repair' },
+              { id: 'default-4', name: 'Electrical Work' },
+              { id: 'default-5', name: 'System Installation' }
+            ];
+            setJobTypes(defaultJobTypes);
+            cache.set(cacheKey, defaultJobTypes, 120); // Cache defaults for 2 hours
+          } else {
+            // Update cache and state
+            cache.set(cacheKey, jobTypesData, 120); // Cache for 2 hours
+            setJobTypes(jobTypesData);
+          }
+          cache.setLoading(cacheKey, false);
+        }, (error) => {
+          console.error("Error loading job types:", error);
+          // Fallback to default job types
+          const defaultJobTypes = [
+            { id: 'default-1', name: 'AC Repair' },
+            { id: 'default-2', name: 'HVAC Maintenance' },
+            { id: 'default-3', name: 'Plumbing Repair' },
+            { id: 'default-4', name: 'Electrical Work' },
+            { id: 'default-5', name: 'System Installation' }
+          ];
+          setJobTypes(defaultJobTypes);
+          cache.set(cacheKey, defaultJobTypes, 120);
+          cache.setLoading(cacheKey, false);
+        });
+        
+        return () => unsubscribe();
+      } catch (error) {
+        console.error("Error setting up job types listener:", error);
+        cache.setLoading(cacheKey, false);
+      }
+    };
+
+    loadJobTypes();
+  }, [db, userId, tenantId, cache]);
+
+  // Load active technicians with caching
+  useEffect(() => {
+    if (!db || !userId || !tenantId) return;
+
+    const loadTechnicians = async () => {
+      const cacheKey = `technicians_${tenantId}_${userId}`;
+      
+      // Try to get from cache first
+      const cachedTechnicians = cache.get<any[]>(cacheKey);
+      if (cachedTechnicians) {
+        setTechnicians(cachedTechnicians);
+        return;
+      }
+
+      // If not in cache, load from Firebase
+      try {
+        cache.setLoading(cacheKey, true);
+        
+        const techQuery = query(
+          collection(db, 'tenants', tenantId, 'staff'),
+          where("userId", "==", userId),
+          where("staffType", "==", "technician"),
+          where("status", "==", "active")
+        );
+        
+        const unsubscribe = onSnapshot(techQuery, (querySnapshot) => {
+          const techData = [];
+          querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            techData.push({
+              id: doc.id,
+              name: data.fullName || `${data.firstName} ${data.lastName}`,
+              role: data.role,
+              businessUnit: data.businessUnit
+            });
+          });
+          
+          // Update cache and state
+          cache.set(cacheKey, techData, 60); // Cache for 1 hour
+          setTechnicians(techData);
+          cache.setLoading(cacheKey, false);
+        }, (error) => {
+          console.error("Error loading technicians:", error);
+          cache.setLoading(cacheKey, false);
+        });
+        
+        return () => unsubscribe();
+      } catch (error) {
+        console.error("Error setting up technicians listener:", error);
+        cache.setLoading(cacheKey, false);
+      }
+    };
+
+    loadTechnicians();
+  }, [db, userId, tenantId, cache]);
 
   // Filter customers based on search
   useEffect(() => {
@@ -1063,6 +1261,70 @@ const Inbound: React.FC = () => {
 
   return (
     <>
+      {/* CSS styles for email content */}
+      <style>{`
+        .email-content p {
+          margin: 0.5em 0;
+        }
+        .email-content p:first-child {
+          margin-top: 0;
+        }
+        .email-content p:last-child {
+          margin-bottom: 0;
+        }
+        .email-content ul, .email-content ol {
+          margin: 0.5em 0;
+          padding-left: 1.5em;
+        }
+        .email-content li {
+          margin: 0.25em 0;
+        }
+        .email-content blockquote {
+          margin: 0.5em 0;
+          padding-left: 1em;
+          border-left: 3px solid #e5e7eb;
+          font-style: italic;
+          color: #6b7280;
+        }
+        .dark .email-content blockquote {
+          border-left-color: #4b5563;
+          color: #9ca3af;
+        }
+        .email-content h1, .email-content h2, .email-content h3, .email-content h4, .email-content h5, .email-content h6 {
+          margin: 0.75em 0 0.25em 0;
+          font-weight: 600;
+        }
+        .email-content h1 { font-size: 1.25em; }
+        .email-content h2 { font-size: 1.125em; }
+        .email-content h3 { font-size: 1em; }
+        .email-content strong, .email-content b {
+          font-weight: 600;
+        }
+        .email-content em, .email-content i {
+          font-style: italic;
+        }
+        .email-content table {
+          border-collapse: collapse;
+          width: 100%;
+          margin: 0.5em 0;
+        }
+        .email-content td, .email-content th {
+          border: 1px solid #e5e7eb;
+          padding: 0.25em 0.5em;
+          text-align: left;
+        }
+        .dark .email-content td, .dark .email-content th {
+          border-color: #4b5563;
+        }
+        .email-content th {
+          background-color: #f9fafb;
+          font-weight: 600;
+        }
+        .dark .email-content th {
+          background-color: #374151;
+        }
+      `}</style>
+      
       {/* Everything that was previously inside return goes here, including NotificationProvider, main content, floating compose area, etc. */}
       <NotificationProvider>
         <div className="h-screen bg-gray-100 dark:bg-slate-900 text-gray-900 dark:text-gray-100 transition-colors overflow-hidden">
@@ -1763,14 +2025,17 @@ const Inbound: React.FC = () => {
                       )}
 
                       {inboxView === 'emails' && (
-                        <FirebaseEmailInterface />
+                        <FirebaseEmailInterface 
+                          selectedEmail={selectedEmail}
+                          onEmailSelect={setSelectedEmail}
+                        />
                       )}
                     </div>
                   </div>
 
                   {/* Main conversation area */}
                   <div className="flex-1 flex flex-col bg-white dark:bg-slate-800 h-full overflow-hidden">
-                    {selectedConversation ? (
+                    {(selectedConversation && inboxView !== 'emails') ? (
                       <>
                         {/* Conversation header */}
                         <div className="p-4 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex-shrink-0">
@@ -1865,12 +2130,115 @@ const Inbound: React.FC = () => {
                           </div>
                         </div>
                       </>
+                    ) : inboxView === 'emails' && selectedEmail ? (
+                      <>
+                        {/* Email header */}
+                        <div className="p-4 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex-shrink-0">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+                                <Mail size={16} className="text-blue-600 dark:text-blue-400" />
+                              </div>
+                              <div>
+                                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                                  {selectedEmail.subject || '(No Subject)'}
+                                </h2>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                  From: {selectedEmail.from} • To: {selectedEmail.to}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <button 
+                                onClick={() => handleEmailReply(selectedEmail)}
+                                className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                              >
+                                <Reply size={18} />
+                              </button>
+                              <button 
+                                onClick={() => handleEmailForward(selectedEmail)}
+                                className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                              >
+                                <Forward size={18} />
+                              </button>
+                              <button className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                                <MoreHorizontal size={18} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Email content in chat-like format */}
+                        <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-slate-800">
+                          <div className="space-y-4 pb-60">
+                            {/* Email message bubble - clean chat style */}
+                            <div className="flex items-start space-x-3">
+                              <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center flex-shrink-0">
+                                <Mail size={14} className="text-blue-600 dark:text-blue-400" />
+                              </div>
+                              <div className="flex-1">
+                                <div className="bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg p-3 max-w-md">
+                                  {/* Email body with proper HTML rendering and styling */}
+                                  <div 
+                                    className="text-sm text-gray-900 dark:text-gray-100 email-content"
+                                    dangerouslySetInnerHTML={{ 
+                                      __html: sanitizeEmailHTML(selectedEmail.body || '') 
+                                    }}
+                                    style={{
+                                      lineHeight: '1.5',
+                                      wordWrap: 'break-word',
+                                      overflowWrap: 'break-word'
+                                    }}
+                                  />
+                                </div>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                  {formatEmailDate(selectedEmail.receivedAt)}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Show attachments separately if they exist */}
+                            {selectedEmail.attachments && selectedEmail.attachments.length > 0 && (
+                              <div className="flex items-start space-x-3">
+                                <div className="w-8 h-8"></div> {/* Spacer to align with message */}
+                                <div className="flex-1">
+                                  <div className="bg-gray-100 dark:bg-slate-600 rounded-lg p-3 max-w-md">
+                                    <div className="flex items-center space-x-2 mb-2">
+                                      <Paperclip size={14} className="text-gray-500 dark:text-gray-400" />
+                                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        {selectedEmail.attachments.length} attachment{selectedEmail.attachments.length > 1 ? 's' : ''}
+                                      </span>
+                                    </div>
+                                    <div className="space-y-1">
+                                      {selectedEmail.attachments.map((attachment, index) => (
+                                        <div key={index} className="text-sm text-gray-600 dark:text-gray-400">
+                                          📎 {attachment.filename}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </>
                     ) : (
                       <div className="flex-1 flex items-center justify-center">
                         <div className="text-center">
-                          <MessageSquare className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-4" />
-                          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No conversation selected</h3>
-                          <p className="text-gray-500 dark:text-gray-400">Choose a conversation from the list to start messaging</p>
+                          {inboxView === 'emails' ? (
+                            <>
+                              <Mail className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-4" />
+                              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No email selected</h3>
+                              <p className="text-gray-500 dark:text-gray-400">Choose an email from the list to view its content</p>
+                            </>
+                          ) : (
+                            <>
+                              <MessageSquare className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-4" />
+                              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No conversation selected</h3>
+                              <p className="text-gray-500 dark:text-gray-400">Choose a conversation from the list to start messaging</p>
+                            </>
+                          )}
                         </div>
                       </div>
                     )}
@@ -1878,7 +2246,7 @@ const Inbound: React.FC = () => {
 
                   {/* Right sidebar - Customer details */}
                   <div className="w-80 bg-gray-50 dark:bg-slate-900 border-l border-gray-200 dark:border-slate-700 p-4 h-full overflow-y-auto">
-                    {selectedConversation && (
+                    {(selectedConversation && inboxView !== 'emails') && (
                       <div className="space-y-6">
                         {/* Customer Details Section */}
                         <div>
@@ -1973,13 +2341,84 @@ const Inbound: React.FC = () => {
                         </div>
                       </div>
                     )}
+
+                    {(inboxView === 'emails' && selectedEmail) && (
+                      <div className="space-y-6">
+                        {/* Email Actions Section */}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Email Actions</h3>
+                          <div className="space-y-2">
+                            <button className="w-full text-left px-3 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center">
+                              <Reply size={14} className="mr-2" />
+                              Reply
+                            </button>
+                            <button className="w-full text-left px-3 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center">
+                              <Forward size={14} className="mr-2" />
+                              Forward
+                            </button>
+                            <button className="w-full text-left px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center">
+                              <Building size={14} className="mr-2" />
+                              Create Job
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Email Details Section */}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Email Details</h3>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Status:</span>
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                selectedEmail.isRead 
+                                  ? 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' 
+                                  : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                              }`}>
+                                {selectedEmail.isRead ? 'Read' : 'Unread'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Folder:</span>
+                              <span className="text-gray-900 dark:text-gray-100 capitalize">{selectedEmail.folder}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Source:</span>
+                              <span className="text-gray-900 dark:text-gray-100 capitalize">{selectedEmail.source || 'Gmail'}</span>
+                            </div>
+                            {selectedEmail.attachments && selectedEmail.attachments.length > 0 && (
+                              <div className="flex justify-between">
+                                <span className="text-gray-600 dark:text-gray-400">Attachments:</span>
+                                <span className="text-gray-900 dark:text-gray-100">{selectedEmail.attachments.length}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Customer Lookup Section */}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Customer Lookup</h3>
+                          <div className="space-y-2">
+                            <div className="text-sm">
+                              <span className="text-gray-600 dark:text-gray-400">From:</span>
+                              <div className="mt-1 text-gray-900 dark:text-gray-100 break-all">{selectedEmail.from}</div>
+                            </div>
+                            <button className="w-full text-left px-3 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                              Search Customers
+                            </button>
+                            <button className="w-full text-left px-3 py-2 text-sm text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                              Create New Customer
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Floating compose area - positioned relative to viewport, fixed width */}
-            {selectedConversation && activeTab === 'inbox' && (
+            {/* Floating compose area for conversations */}
+            {selectedConversation && activeTab === 'inbox' && inboxView !== 'emails' && (
               <div className="fixed bottom-4 left-[calc(384px+4rem)] right-[calc(320px+4rem)] z-20">
                 <div style={{ width: '480px', margin: '0 auto' }}>
                   {/* Reply/Private Note tabs - centered */}
@@ -2011,6 +2450,64 @@ const Inbound: React.FC = () => {
                       </button>
                       <button className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-600 rounded-md transition-colors">
                         <MessageSquare size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Floating compose area for emails */}
+            {selectedEmail && activeTab === 'inbox' && inboxView === 'emails' && (
+              <div className="fixed bottom-4 left-[calc(384px+4rem)] right-[calc(320px+4rem)] z-20">
+                <div style={{ width: '480px', margin: '0 auto' }}>
+                  {/* Email compose tabs */}
+                  <div className="flex justify-center items-center space-x-6 mb-4">
+                    <button 
+                      onClick={() => handleEmailReply(selectedEmail)}
+                      className="px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                    >
+                      Reply
+                    </button>
+                    <button 
+                      onClick={() => handleEmailForward(selectedEmail)}
+                      className="px-4 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                    >
+                      Forward
+                    </button>
+                  </div>
+                  {/* Quick compose box */}
+                  <div className="relative bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-xl shadow-lg">
+                    <textarea
+                      placeholder="Quick reply..."
+                      rows={3}
+                      value={emailComposeData.body}
+                      onChange={(e) => setEmailComposeData(prev => ({ ...prev, body: e.target.value }))}
+                      className="w-full px-4 py-3 pr-16 border-0 rounded-xl bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-0 focus:outline-none resize-none text-sm"
+                    />
+                    {/* Floating send button in bottom right */}
+                    <button 
+                      onClick={() => {
+                        if (!emailComposeData.body.trim()) return;
+                        handleEmailReply(selectedEmail);
+                      }}
+                      className="absolute bottom-3 right-3 w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center transition-colors shadow-md disabled:opacity-50"
+                      disabled={!emailComposeData.body.trim()}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 21L23 12L2 3V10L17 12L2 14V21Z" fill="currentColor"/>
+                      </svg>
+                    </button>
+                    {/* Toolbar at bottom left */}
+                    <div className="absolute bottom-3 left-3 flex items-center space-x-2">
+                      <button className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-600 rounded-md transition-colors">
+                        <Paperclip size={16} />
+                      </button>
+                      <button 
+                        onClick={() => handleEmailForward(selectedEmail)}
+                        className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-600 rounded-md transition-colors"
+                      >
+                        <Forward size={16} />
                       </button>
                     </div>
                   </div>

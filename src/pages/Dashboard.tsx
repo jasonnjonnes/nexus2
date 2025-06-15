@@ -27,6 +27,7 @@ import {
 } from 'chart.js';
 import { db } from '../firebase';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import { useCache } from '../contexts/CacheContext';
 import {
   query,
   collection,
@@ -161,6 +162,7 @@ const Dashboard: React.FC = () => {
   // Firebase state
   const { user, tenantId } = useFirebaseAuth();
   const userId = user?.uid || null;
+  const cache = useCache();
   const [isLoading, setIsLoading] = useState(true);
   
   // Debug logging
@@ -203,12 +205,24 @@ const Dashboard: React.FC = () => {
     return () => observer.disconnect();
   }, []);
 
-  // Load recent data efficiently
+  // Load recent data efficiently with caching
   const loadRecentData = useCallback(async () => {
     if (!db || !userId || !tenantId) return;
     
+    const cacheKey = `recent_data_${tenantId}_${userId}`;
+    
+    // Try to get from cache first
+    const cachedRecentData = cache.get<{jobs: Job[], invoices: Invoice[], estimates: Estimate[]}>(cacheKey);
+    if (cachedRecentData) {
+      setRecentJobs(cachedRecentData.jobs);
+      setRecentInvoices(cachedRecentData.invoices);
+      setRecentEstimates(cachedRecentData.estimates);
+      return;
+    }
+
     setIsLoadingRecents(true);
     try {
+      cache.setLoading(cacheKey, true);
       const promises = [];
       
       // Load recent jobs (last 25)
@@ -223,7 +237,7 @@ const Dashboard: React.FC = () => {
           snapshot.forEach(doc => {
             jobsData.push({ id: doc.id, ...doc.data() } as Job);
           });
-          setRecentJobs(jobsData);
+          return jobsData;
         })
       );
       
@@ -239,7 +253,7 @@ const Dashboard: React.FC = () => {
           snapshot.forEach(doc => {
             invoicesData.push({ id: doc.id, ...doc.data() } as Invoice);
           });
-          setRecentInvoices(invoicesData);
+          return invoicesData;
         })
       );
       
@@ -255,116 +269,198 @@ const Dashboard: React.FC = () => {
           snapshot.forEach(doc => {
             estimatesData.push({ id: doc.id, ...doc.data() } as Estimate);
           });
-          setRecentEstimates(estimatesData);
+          return estimatesData;
         })
       );
       
-      await Promise.all(promises);
+      const [recentJobsData, recentInvoicesData, recentEstimatesData] = await Promise.all(promises);
+      
+      // Update state
+      setRecentJobs(recentJobsData);
+      setRecentInvoices(recentInvoicesData);  
+      setRecentEstimates(recentEstimatesData);
+      
+      // Cache the recent data for 10 minutes
+      cache.set(cacheKey, {
+        jobs: recentJobsData,
+        invoices: recentInvoicesData,
+        estimates: recentEstimatesData
+      }, 10);
+      
     } catch (error) {
       console.error('Error loading recent data:', error);
     } finally {
       setIsLoadingRecents(false);
+      cache.setLoading(cacheKey, false);
     }
-  }, [db, userId, tenantId]);
+  }, [db, userId, tenantId, cache]);
 
-  // Load data from Firebase
+  // Load data from Firebase with caching
   useEffect(() => {
     if (!db || !userId || !tenantId) {
       console.log('Dashboard: Missing required data for Firebase queries', { db: !!db, userId, tenantId });
       return;
     }
     
-    console.log('Dashboard: Setting up Firebase listeners', { userId, tenantId });
+    console.log('Dashboard: Setting up Firebase listeners with caching', { userId, tenantId });
     
     // Load recent data first for quick display
     loadRecentData();
 
     const unsubscribes: Unsubscribe[] = [];
 
-    // Load jobs
-    const jobsQuery = query(
-      collection(db, 'tenants', tenantId, 'jobs'),
-      where("userId", "==", userId)
-    );
-    unsubscribes.push(onSnapshot(jobsQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
-      const jobsData: Job[] = [];
-      querySnapshot.forEach((doc) => {
-        jobsData.push({ id: doc.id, ...doc.data() } as Job);
-      });
-      setJobs(jobsData);
-    }));
+    // Load jobs with caching
+    const loadJobs = () => {
+      const cacheKey = `dashboard_jobs_${tenantId}_${userId}`;
+      const cachedJobs = cache.get<Job[]>(cacheKey);
+      
+      if (cachedJobs) {
+        setJobs(cachedJobs);
+      }
 
-    // Load invoices
-    const invoicesQuery = query(
-      collection(db, 'tenants', tenantId, 'invoices'),
-      where("userId", "==", userId)
-    );
-    unsubscribes.push(onSnapshot(invoicesQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
-      const invoicesData: Invoice[] = [];
-      querySnapshot.forEach((doc) => {
-        invoicesData.push({ id: doc.id, ...doc.data() } as Invoice);
-      });
-      setInvoices(invoicesData);
-    }));
+      const jobsQuery = query(
+        collection(db, 'tenants', tenantId, 'jobs'),
+        where("userId", "==", userId)
+      );
+      unsubscribes.push(onSnapshot(jobsQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
+        const jobsData: Job[] = [];
+        querySnapshot.forEach((doc) => {
+          jobsData.push({ id: doc.id, ...doc.data() } as Job);
+        });
+        setJobs(jobsData);
+        cache.set(cacheKey, jobsData, 5); // Cache for 5 minutes (jobs change frequently)
+      }));
+    };
 
-    // Load estimates
-    const estimatesQuery = query(
-      collection(db, 'tenants', tenantId, 'estimates'),
-      where("userId", "==", userId)
-    );
-    unsubscribes.push(onSnapshot(estimatesQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
-      const estimatesData: Estimate[] = [];
-      querySnapshot.forEach((doc) => {
-        estimatesData.push({ id: doc.id, ...doc.data() } as Estimate);
-      });
-      setEstimates(estimatesData);
-    }));
+    // Load invoices with caching
+    const loadInvoices = () => {
+      const cacheKey = `dashboard_invoices_${tenantId}_${userId}`;
+      const cachedInvoices = cache.get<Invoice[]>(cacheKey);
+      
+      if (cachedInvoices) {
+        setInvoices(cachedInvoices);
+      }
 
-    // Load customers
-    const customersQuery = query(
-      collection(db, 'tenants', tenantId, 'customers'),
-      where("userId", "==", userId)
-    );
-    unsubscribes.push(onSnapshot(customersQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
-      const customersData: Customer[] = [];
-      querySnapshot.forEach((doc) => {
-        customersData.push({ id: doc.id, ...doc.data() } as Customer);
-      });
-      setCustomers(customersData);
-    }));
+      const invoicesQuery = query(
+        collection(db, 'tenants', tenantId, 'invoices'),
+        where("userId", "==", userId)
+      );
+      unsubscribes.push(onSnapshot(invoicesQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
+        const invoicesData: Invoice[] = [];
+        querySnapshot.forEach((doc) => {
+          invoicesData.push({ id: doc.id, ...doc.data() } as Invoice);
+        });
+        setInvoices(invoicesData);
+        cache.set(cacheKey, invoicesData, 10); // Cache for 10 minutes
+      }));
+    };
 
-    // Load business units
-    const businessUnitsQuery = query(
-      collection(db, 'tenants', tenantId, 'businessUnits'),
-      where("userId", "==", userId)
-    );
-    unsubscribes.push(onSnapshot(businessUnitsQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
-      const businessUnitsData: BusinessUnit[] = [];
-      querySnapshot.forEach((doc) => {
-        businessUnitsData.push({ id: doc.id, ...doc.data() } as BusinessUnit);
-      });
-      setBusinessUnits(businessUnitsData);
-    }));
+    // Load estimates with caching
+    const loadEstimates = () => {
+      const cacheKey = `dashboard_estimates_${tenantId}_${userId}`;
+      const cachedEstimates = cache.get<Estimate[]>(cacheKey);
+      
+      if (cachedEstimates) {
+        setEstimates(cachedEstimates);
+      }
 
-    // Load technicians from the staff collection (filtered by staffType = "technician")
-    const staffQuery = query(
-      collection(db, 'tenants', tenantId, 'staff'),
-      where("userId", "==", userId),
-      where("staffType", "==", "technician")
-    );
-    unsubscribes.push(onSnapshot(staffQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
-      const techniciansData: Technician[] = [];
-      querySnapshot.forEach((doc) => {
-        techniciansData.push({ id: doc.id, ...doc.data() } as Technician);
-      });
-      console.log('Loaded technicians:', techniciansData);
-      setTechnicians(techniciansData);
-    }));
+      const estimatesQuery = query(
+        collection(db, 'tenants', tenantId, 'estimates'),
+        where("userId", "==", userId)
+      );
+      unsubscribes.push(onSnapshot(estimatesQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
+        const estimatesData: Estimate[] = [];
+        querySnapshot.forEach((doc) => {
+          estimatesData.push({ id: doc.id, ...doc.data() } as Estimate);
+        });
+        setEstimates(estimatesData);
+        cache.set(cacheKey, estimatesData, 10); // Cache for 10 minutes
+      }));
+    };
+
+    // Load customers with caching
+    const loadCustomers = () => {
+      const cacheKey = `dashboard_customers_${tenantId}_${userId}`;
+      const cachedCustomers = cache.get<Customer[]>(cacheKey);
+      
+      if (cachedCustomers) {
+        setCustomers(cachedCustomers);
+      }
+
+      const customersQuery = query(
+        collection(db, 'tenants', tenantId, 'customers'),
+        where("userId", "==", userId)
+      );
+      unsubscribes.push(onSnapshot(customersQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
+        const customersData: Customer[] = [];
+        querySnapshot.forEach((doc) => {
+          customersData.push({ id: doc.id, ...doc.data() } as Customer);
+        });
+        setCustomers(customersData);
+        cache.set(cacheKey, customersData, 15); // Cache for 15 minutes
+      }));
+    };
+
+    // Load business units with caching
+    const loadBusinessUnits = () => {
+      const cacheKey = `dashboard_business_units_${tenantId}_${userId}`;
+      const cachedBusinessUnits = cache.get<BusinessUnit[]>(cacheKey);
+      
+      if (cachedBusinessUnits) {
+        setBusinessUnits(cachedBusinessUnits);
+      }
+
+      const businessUnitsQuery = query(
+        collection(db, 'tenants', tenantId, 'businessUnits'),
+        where("userId", "==", userId)
+      );
+      unsubscribes.push(onSnapshot(businessUnitsQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
+        const businessUnitsData: BusinessUnit[] = [];
+        querySnapshot.forEach((doc) => {
+          businessUnitsData.push({ id: doc.id, ...doc.data() } as BusinessUnit);
+        });
+        setBusinessUnits(businessUnitsData);
+        cache.set(cacheKey, businessUnitsData, 60); // Cache for 1 hour
+      }));
+    };
+
+    // Load technicians with caching
+    const loadTechnicians = () => {
+      const cacheKey = `dashboard_technicians_${tenantId}_${userId}`;
+      const cachedTechnicians = cache.get<Technician[]>(cacheKey);
+      
+      if (cachedTechnicians) {
+        setTechnicians(cachedTechnicians);
+      }
+
+      const staffQuery = query(
+        collection(db, 'tenants', tenantId, 'staff'),
+        where("userId", "==", userId),
+        where("staffType", "==", "technician")
+      );
+      unsubscribes.push(onSnapshot(staffQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
+        const techniciansData: Technician[] = [];
+        querySnapshot.forEach((doc) => {
+          techniciansData.push({ id: doc.id, ...doc.data() } as Technician);
+        });
+        console.log('Loaded technicians:', techniciansData);
+        setTechnicians(techniciansData);
+        cache.set(cacheKey, techniciansData, 60); // Cache for 1 hour
+      }));
+    };
+
+    // Load all data
+    loadJobs();
+    loadInvoices();
+    loadEstimates();
+    loadCustomers();
+    loadBusinessUnits();
+    loadTechnicians();
 
     return () => {
       unsubscribes.forEach(unsubscribe => unsubscribe());
     };
-  }, [db, userId, tenantId, loadRecentData]);
+  }, [db, userId, tenantId, cache, loadRecentData]);
 
   // Set loading to false once we have initial data or after a timeout
   useEffect(() => {

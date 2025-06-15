@@ -18,6 +18,7 @@ import EstimateImportModal from '../components/EstimateImportModal';
 import LocationImportModal from '../components/LocationImportModal';
 import { Menu } from '@headlessui/react';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import { useCache } from '../contexts/CacheContext';
 import CallButton from '../components/CallButton';
 import { trackItemAccess, getRecentItems } from '../utils/recentItemsTracker';
 
@@ -158,6 +159,7 @@ const Customers = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [unsubscribeCustomers, setUnsubscribeCustomers] = useState<(() => void) | null>(null);
   const { tenantId } = useFirebaseAuth();
+  const cache = useCache();
 
   // Handle navigation from global search
   useEffect(() => {

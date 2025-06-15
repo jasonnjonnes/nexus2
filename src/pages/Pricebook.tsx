@@ -28,6 +28,7 @@ import EquipmentForm, { EquipmentFormState } from '../components/EquipmentForm';
 import { Menu } from '@headlessui/react';
 import CustomerImportModal from '../components/CustomerImportModal';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import { useCache } from '../contexts/CacheContext';
 import { db } from '../firebase';
 
 // Declare firebase config if it's coming from an external script
@@ -322,6 +323,207 @@ const Pricebook: React.FC = () => {
   // Use auth context instead of direct Firebase
   const { user, tenantId } = useFirebaseAuth();
   const userId = user?.uid;
+  const cache = useCache();
+
+  // Cached data fetching functions
+  const fetchCategoriesWithCache = useCallback(async () => {
+    if (!db || !userId || !tenantId) {
+      console.error('Cannot fetch categories: db, userId, or tenantId is missing');
+      return;
+    }
+
+    const cacheKey = `categories_${tenantId}_${userId}`;
+    
+    // Check cache first
+    const cachedCategories = cache.get<Category[]>(cacheKey);
+    if (cachedCategories) {
+      console.log('Categories loaded from cache:', cachedCategories.length);
+      setCategories(cachedCategories);
+      return;
+    }
+
+    // If not in cache, fetch from Firebase
+    try {
+      console.log('Fetching categories from Firebase...');
+      const categoriesRef = collection(db, 'tenants', tenantId, 'categories');
+      const q = query(categoriesRef, where('userId', '==', userId));
+      const snapshot = await getDocs(q);
+      
+      const categoriesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Category[];
+      
+      console.log('Categories fetched from Firebase:', categoriesData.length);
+      setCategories(categoriesData);
+      
+      // Cache the result
+      cache.set(cacheKey, categoriesData, 120); // Cache for 2 hours
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      setError('Failed to load categories');
+    }
+  }, [db, userId, tenantId, cache]);
+
+  const fetchServicesWithCache = useCallback(async () => {
+    if (!db || !userId || !tenantId) {
+      console.error('Cannot fetch services: db, userId, or tenantId is missing');
+      return;
+    }
+
+    const cacheKey = `services_${tenantId}_${userId}`;
+    
+    // Check cache first
+    const cachedServices = cache.get<Service[]>(cacheKey);
+    if (cachedServices) {
+      console.log('Services loaded from cache:', cachedServices.length);
+      setServices(cachedServices);
+      return;
+    }
+
+    // If not in cache, fetch from Firebase
+    try {
+      console.log('Fetching services from Firebase...');
+      const servicesRef = collection(db, 'tenants', tenantId, 'services');
+      const q = query(servicesRef, where('userId', '==', userId));
+      const snapshot = await getDocs(q);
+      
+      const servicesData = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          ...data,
+          id: doc.id,
+          categories: Array.isArray(data.categories) ? data.categories.map(String) : [],
+        };
+      }) as Service[];
+      
+      console.log('Services fetched from Firebase:', servicesData.length);
+      setServices(servicesData);
+      
+      // Cache the result
+      cache.set(cacheKey, servicesData, 60); // Cache for 1 hour
+    } catch (error) {
+      console.error('Error fetching services:', error);
+      setError('Failed to load services');
+    }
+  }, [db, userId, tenantId, cache]);
+
+  const fetchMaterialsWithCache = useCallback(async () => {
+    if (!db || !userId || !tenantId) {
+      console.error('Cannot fetch materials: db, userId, or tenantId is missing');
+      return;
+    }
+
+    const cacheKey = `materials_${tenantId}_${userId}`;
+    
+    // Check cache first
+    const cachedMaterials = cache.get<Material[]>(cacheKey);
+    if (cachedMaterials) {
+      console.log('Materials loaded from cache:', cachedMaterials.length);
+      setMaterials(cachedMaterials);
+      return;
+    }
+
+    // If not in cache, fetch from Firebase
+    try {
+      console.log('Fetching materials from Firebase...');
+      const materialsRef = collection(db, 'tenants', tenantId, 'materials');
+      const q = query(materialsRef, where('userId', '==', userId));
+      const snapshot = await getDocs(q);
+      
+      const materialsData = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          ...data,
+          id: doc.id,
+          categories: Array.isArray(data.categories) ? data.categories.map(String) : [],
+        };
+      }) as Material[];
+      
+      console.log('Materials fetched from Firebase:', materialsData.length);
+      setMaterials(materialsData);
+      
+      // Cache the result
+      cache.set(cacheKey, materialsData, 60); // Cache for 1 hour
+    } catch (error) {
+      console.error('Error fetching materials:', error);
+      setError('Failed to load materials');
+    }
+  }, [db, userId, tenantId, cache]);
+
+  const fetchPriceRulesWithCache = useCallback(async () => {
+    if (!db || !userId || !tenantId) return;
+
+    const cacheKey = `priceRules_${tenantId}_${userId}`;
+    
+    // Check cache first
+    const cachedPriceRules = cache.get<PriceRule[]>(cacheKey);
+    if (cachedPriceRules) {
+      console.log('Price rules loaded from cache:', cachedPriceRules.length);
+      setPriceRules(cachedPriceRules);
+      return;
+    }
+
+    // If not in cache, fetch from Firebase
+    try {
+      console.log('Fetching price rules from Firebase...');
+      const q = query(collection(db, 'tenants', tenantId, 'priceRules'), where('userId', '==', userId));
+      const querySnapshot = await getDocs(q);
+      const rules = querySnapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id,
+        createdAt: doc.data().createdAt?.toDate?.() || new Date(),
+        updatedAt: doc.data().updatedAt?.toDate?.() || new Date(),
+      })) as PriceRule[];
+      
+      console.log('Price rules fetched from Firebase:', rules.length);
+      setPriceRules(rules);
+      
+      // Cache the result
+      cache.set(cacheKey, rules, 120); // Cache for 2 hours
+    } catch (error) {
+      console.error("Error fetching price rules:", error);
+    }
+  }, [db, userId, tenantId, cache]);
+
+  // Function to invalidate cache when data changes
+  const invalidateCache = useCallback((dataType: 'categories' | 'services' | 'materials' | 'priceRules' | 'all') => {
+    if (dataType === 'all') {
+      cache.invalidate(`${tenantId}_${userId}`);
+    } else {
+      cache.remove(`${dataType}_${tenantId}_${userId}`);
+    }
+  }, [cache, tenantId, userId]);
+
+  // Function to refresh data (bypass cache)
+  const refreshData = useCallback(async (dataType?: 'categories' | 'services' | 'materials' | 'priceRules') => {
+    if (dataType) {
+      invalidateCache(dataType);
+      switch (dataType) {
+        case 'categories':
+          await fetchCategoriesWithCache();
+          break;
+        case 'services':
+          await fetchServicesWithCache();
+          break;
+        case 'materials':
+          await fetchMaterialsWithCache();
+          break;
+        case 'priceRules':
+          await fetchPriceRulesWithCache();
+          break;
+      }
+    } else {
+      // Refresh all data
+      invalidateCache('all');
+      await Promise.all([
+        fetchCategoriesWithCache(),
+        fetchServicesWithCache(),
+        fetchMaterialsWithCache(),
+        fetchPriceRulesWithCache()
+      ]);
+    }
+  }, [invalidateCache, fetchCategoriesWithCache, fetchServicesWithCache, fetchMaterialsWithCache, fetchPriceRulesWithCache]);
 
   const fetchEquipment = useCallback(() => {
     if (!db || !userId || !tenantId) {
@@ -528,36 +730,33 @@ const Pricebook: React.FC = () => {
     }
   };
 
+  // Load data on component mount using cached functions
   useEffect(() => {
     if (db && userId && tenantId) {
       setIsLoading(true);
-      try {
-        console.log('Setting up data listeners...');
-        const unsubscribes = [
-          fetchCategories(),
-          fetchServices(),
-          fetchMaterials(),
-          fetchEquipment()
-        ];
-        fetchPriceRules(); // fetch once, not a listener
-        console.log('All data listeners set up');
-        setIsLoading(false);
-        // Cleanup function to unsubscribe from all listeners
-        return () => {
-          console.log('Cleaning up data listeners...');
-          unsubscribes
-            .filter(fn => typeof fn === 'function')
-            .forEach(unsubscribe => unsubscribe());
-        };
-      } catch (error) {
-        console.error('Error setting up data listeners:', error);
-        setError('Failed to load initial data');
-        setIsLoading(false);
-      }
+      const loadData = async () => {
+        try {
+          console.log('Loading pricebook data with caching...');
+          await Promise.all([
+            fetchCategoriesWithCache(),
+            fetchServicesWithCache(),
+            fetchMaterialsWithCache(),
+            fetchPriceRulesWithCache()
+          ]);
+          console.log('All pricebook data loaded');
+        } catch (error) {
+          console.error('Error loading pricebook data:', error);
+          setError('Failed to load pricebook data');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      
+      loadData();
     } else {
-      console.error('Cannot set up data listeners: db, userId, or tenantId is missing', { db: !!db, userId: !!userId, tenantId });
+      console.error('Cannot load data: db, userId, or tenantId is missing', { db: !!db, userId: !!userId, tenantId });
     }
-  }, [db, userId, tenantId, fetchCategories, fetchServices, fetchMaterials, fetchEquipment]);
+  }, [db, userId, tenantId, fetchCategoriesWithCache, fetchServicesWithCache, fetchMaterialsWithCache, fetchPriceRulesWithCache]);
 
   const handleAddService = () => {
     setServiceForm(initialServiceForm);
@@ -586,7 +785,11 @@ const Pricebook: React.FC = () => {
         categories: Array.isArray(serviceForm.categories) ? serviceForm.categories.map(String) : [],
         updatedAt: serverTimestamp(),
       });
-      await fetchServices();
+      
+      // Invalidate cache and refresh services
+      invalidateCache('services');
+      await fetchServicesWithCache();
+      
       setShowEditServiceModal(false);
       setEditingService(null);
       setServiceForm(initialServiceForm);
@@ -610,9 +813,13 @@ const Pricebook: React.FC = () => {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+      
+      // Invalidate cache and refresh materials
+      invalidateCache('materials');
+      await fetchMaterialsWithCache();
+      
       setShowAddMaterialModal(false);
       setMaterialForm(initialMaterialFormState);
-      await fetchMaterials();
     } catch (error: any) {
       setMaterialError(error.message || 'Error saving material');
     } finally {
@@ -1389,6 +1596,14 @@ const Pricebook: React.FC = () => {
           <p className="text-gray-600 dark:text-gray-400 mt-1">Manage services, materials, and pricing</p>
         </div>
         <div className="flex items-center space-x-3">
+          <button
+            onClick={() => refreshData()}
+            className="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors text-gray-800 dark:text-gray-200 flex items-center"
+            title="Refresh all data from Firebase"
+          >
+            <RefreshCw size={16} className="mr-2" />
+            Refresh
+          </button>
           <Menu as="div" className="relative inline-block text-left">
             <Menu.Button className="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors text-gray-800 dark:text-gray-200 flex items-center">
               <Upload size={16} className="mr-2 inline" />

@@ -318,17 +318,36 @@ export const addEmailAccount = functions.runWith(runtimeOpts).https.onCall(async
 
     // Generate a more robust state object
     const stateObject = {
+      accountId: accountRef.id,
       tenantId: tenantId,
       provider: provider,
       email: email,
-      returnUrl: req.get('origin') || functions.config().app?.url || 'http://localhost:5173',
+      returnUrl: functions.config().app?.url || 'http://localhost:5173',
       // Add a CSRF token for security
       csrfToken: crypto.randomBytes(16).toString('hex'),
     };
     
     const state = Buffer.from(JSON.stringify(stateObject)).toString('base64');
     
-    const oauthUrl = emailProvider.generateOAuthUrl(state);
+    let oauthUrl: string | null = null;
+    
+    // Generate OAuth URL based on provider
+    switch (provider.toLowerCase()) {
+      case 'gmail':
+        oauthUrl = generateGmailOAuthUrl(state);
+        break;
+      case 'outlook':
+        oauthUrl = generateOutlookOAuthUrl(state);
+        break;
+      case 'icloud':
+        oauthUrl = generateICloudOAuthUrl(state);
+        break;
+      case 'yahoo':
+        oauthUrl = generateYahooOAuthUrl(state);
+        break;
+      default:
+        throw new functions.https.HttpsError('invalid-argument', `Unsupported email provider: ${provider}`);
+    }
     
     if (!oauthUrl) {
       throw new functions.https.HttpsError('internal', 'Failed to generate OAuth URL');
@@ -389,7 +408,7 @@ export const getEmailAccounts = functions.runWith(runtimeOpts).https.onCall(asyn
 });
 
 // Helper functions for OAuth URL generation
-function generateGmailOAuthUrl(accountId: string): string {
+function generateGmailOAuthUrl(state: string): string {
   const clientId = functions.config().oauth?.gmail?.client_id || process.env.GMAIL_CLIENT_ID;
   const redirectUri = functions.config().oauth?.gmail?.redirect_uri || 'https://us-central1-servicepro-4c705.cloudfunctions.net/handleGmailOAuth';
   
@@ -398,12 +417,12 @@ function generateGmailOAuthUrl(accountId: string): string {
     `redirect_uri=${encodeURIComponent(redirectUri)}&` +
     `response_type=code&` +
     `scope=https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile&` +
-    `state=${accountId}&` +
+    `state=${state}&` +
     `access_type=offline&` +
     `prompt=consent`;
 }
 
-function generateOutlookOAuthUrl(accountId: string): string {
+function generateOutlookOAuthUrl(state: string): string {
   const clientId = functions.config().oauth?.outlook?.client_id || process.env.OUTLOOK_CLIENT_ID;
   const redirectUri = `${functions.config().app?.url || 'http://localhost:3000'}/oauth/outlook/callback`;
   
@@ -412,15 +431,15 @@ function generateOutlookOAuthUrl(accountId: string): string {
     `redirect_uri=${encodeURIComponent(redirectUri)}&` +
     `response_type=code&` +
     `scope=https://graph.microsoft.com/mail.read https://graph.microsoft.com/mail.send&` +
-    `state=${accountId}`;
+    `state=${state}`;
 }
 
-function generateICloudOAuthUrl(accountId: string): string {
+function generateICloudOAuthUrl(state: string): string {
   // iCloud uses app-specific passwords, not OAuth
-  return `${functions.config().app?.url || 'http://localhost:3000'}/email-setup?provider=icloud&account=${accountId}`;
+  return `${functions.config().app?.url || 'http://localhost:3000'}/email-setup?provider=icloud&state=${state}`;
 }
 
-function generateYahooOAuthUrl(accountId: string): string {
+function generateYahooOAuthUrl(state: string): string {
   const clientId = functions.config().oauth?.yahoo?.client_id || process.env.YAHOO_CLIENT_ID;
   const redirectUri = `${functions.config().app?.url || 'http://localhost:3000'}/oauth/yahoo/callback`;
   
@@ -429,5 +448,5 @@ function generateYahooOAuthUrl(accountId: string): string {
     `redirect_uri=${encodeURIComponent(redirectUri)}&` +
     `response_type=code&` +
     `scope=mail-r mail-w&` +
-    `state=${accountId}`;
+    `state=${state}`;
 } 

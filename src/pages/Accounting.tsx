@@ -40,6 +40,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import { useCache } from '../contexts/CacheContext';
 import { db } from '../firebase';
 import TakePaymentModal from '../components/TakePaymentModal';
 
@@ -53,7 +54,7 @@ interface Invoice {
   total: number;
   subtotal: number;
   taxAmount: number;
-  amountPaid?: number;
+  amountPaid: number;
   status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
   createdAt: string;
   dueDate: string;
@@ -182,7 +183,8 @@ const DEFAULT_EXPENSE_CATEGORIES: Omit<ExpenseCategory, 'id'>[] = [
 
 const Accounting: React.FC = () => {
   const { user, tenantId } = useFirebaseAuth();
-  const userId = user?.uid;
+  const userId = user?.uid || null;
+  const cache = useCache();
 
   // State
   const [activeTab, setActiveTab] = useState('invoices');
@@ -220,144 +222,202 @@ const Accounting: React.FC = () => {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<Invoice | null>(null);
 
-  // Load data
+  // Load data with caching
   useEffect(() => {
     if (!db || !userId || !tenantId) return;
 
-    const unsubscribes: (() => void)[] = [];
+    const loadAccountingData = async () => {
+      const unsubscribes: (() => void)[] = [];
 
-    // Load invoices
-    const invoicesQuery = query(
-      collection(db, 'tenants', tenantId, 'invoices'),
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
-    );
-    
-    unsubscribes.push(onSnapshot(invoicesQuery, (snapshot) => {
-      const invoicesData: Invoice[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        const payments = data.payments || [];
-        const amountPaid = payments.reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+      // Load invoices with caching
+      const loadInvoices = () => {
+        const cacheKey = `accounting_invoices_${tenantId}_${userId}`;
+        const cachedInvoices = cache.get<Invoice[]>(cacheKey);
         
-        invoicesData.push({
-          id: doc.id,
-          invoiceNumber: data.invoiceNumber || `INV-${doc.id.slice(-6)}`,
-          customerName: data.customerName || 'Unknown Customer',
-          jobId: data.jobId,
-          jobNumber: data.jobNumber,
-          total: data.total || 0,
-          subtotal: data.subtotal || 0,
-          taxAmount: data.taxAmount || 0,
-          amountPaid: amountPaid,
-          status: data.status || 'draft',
-          createdAt: data.createdAt || new Date().toISOString(),
-          dueDate: data.dueDate || new Date().toISOString(),
-          paidDate: data.paidDate,
-          businessUnitId: data.businessUnitId,
-          businessUnit: data.businessUnit,
-          services: data.services || [],
-          materials: data.materials || [],
-          payments: payments
-        });
-      });
-      setInvoices(invoicesData);
-    }));
+        if (cachedInvoices) {
+          setInvoices(cachedInvoices);
+        }
 
-    // Load payments
-    const paymentsQuery = query(
-      collection(db, 'tenants', tenantId, 'payments'),
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
-    );
-    
-    unsubscribes.push(onSnapshot(paymentsQuery, (snapshot) => {
-      const paymentsData: Payment[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        paymentsData.push({
-          id: doc.id,
-          invoiceId: data.invoiceId,
-          customerName: data.customerName || 'Unknown Customer',
-          amount: data.amount || 0,
-          date: data.date || new Date().toISOString().split('T')[0],
-          method: data.method || 'cash',
-          processor: data.processor,
-          memo: data.memo,
-          type: data.type || 'invoice_payment',
-          status: data.status || 'completed',
-          createdAt: data.createdAt || new Date().toISOString()
-        });
-      });
-      setPayments(paymentsData);
-    }));
+        const invoicesQuery = query(
+          collection(db, 'tenants', tenantId, 'invoices'),
+          where('userId', '==', userId),
+          orderBy('createdAt', 'desc')
+        );
+        
+        unsubscribes.push(onSnapshot(invoicesQuery, (snapshot) => {
+          const invoicesData: Invoice[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            const payments = data.payments || [];
+            const amountPaid = payments.reduce((sum: number, payment: any) => sum + (payment.amount || 0), 0);
+            
+            invoicesData.push({
+              id: doc.id,
+              invoiceNumber: data.invoiceNumber || `INV-${doc.id.slice(-6)}`,
+              customerName: data.customerName || 'Unknown Customer',
+              jobId: data.jobId,
+              jobNumber: data.jobNumber,
+              total: data.total || 0,
+              subtotal: data.subtotal || 0,
+              taxAmount: data.taxAmount || 0,
+              amountPaid: amountPaid,
+              status: data.status || 'draft',
+              createdAt: data.createdAt || new Date().toISOString(),
+              dueDate: data.dueDate || new Date().toISOString(),
+              paidDate: data.paidDate,
+              businessUnitId: data.businessUnitId,
+              businessUnit: data.businessUnit,
+              services: data.services || [],
+              materials: data.materials || [],
+              payments: payments
+            });
+          });
+          
+          // Cache for 10 minutes
+          cache.set(cacheKey, invoicesData, 10);
+          setInvoices(invoicesData);
+        }));
+      };
 
-    // Load expenses
-    const expensesQuery = query(
-      collection(db, 'tenants', tenantId, 'expenses'),
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
-    );
-    
-    unsubscribes.push(onSnapshot(expensesQuery, (snapshot) => {
-      const expensesData: Expense[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        expensesData.push({
-          id: doc.id,
-          description: data.description || '',
-          amount: data.amount || 0,
-          date: data.date || new Date().toISOString().split('T')[0],
-          category: data.category || 'Other',
-          subcategory: data.subcategory,
-          vendor: data.vendor,
-          jobId: data.jobId,
-          jobNumber: data.jobNumber,
-          businessUnitId: data.businessUnitId,
-          businessUnit: data.businessUnit,
-          paymentMethod: data.paymentMethod || 'cash',
-          receiptUrl: data.receiptUrl,
-          taxDeductible: data.taxDeductible || false,
-          glAccount: data.glAccount,
-          status: data.status || 'pending',
-          createdBy: data.createdBy || userId,
-          createdAt: data.createdAt || new Date().toISOString(),
-          approvedBy: data.approvedBy,
-          approvedAt: data.approvedAt
-        });
-      });
-      setExpenses(expensesData);
-    }));
+      // Load payments with caching
+      const loadPayments = () => {
+        const cacheKey = `accounting_payments_${tenantId}_${userId}`;
+        const cachedPayments = cache.get<Payment[]>(cacheKey);
+        
+        if (cachedPayments) {
+          setPayments(cachedPayments);
+        }
 
-    // Load expense categories
-    const categoriesQuery = query(
-      collection(db, 'tenants', tenantId, 'expenseCategories'),
-      where('userId', '==', userId)
-    );
-    
-    unsubscribes.push(onSnapshot(categoriesQuery, (snapshot) => {
-      const categoriesData: ExpenseCategory[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        categoriesData.push({
-          id: doc.id,
-          name: data.name || '',
-          description: data.description,
-          glAccount: data.glAccount,
-          taxDeductible: data.taxDeductible || false,
-          requiresReceipt: data.requiresReceipt || false,
-          subcategories: data.subcategories || []
-        });
-      });
-      setExpenseCategories(categoriesData);
-    }));
+        const paymentsQuery = query(
+          collection(db, 'tenants', tenantId, 'payments'),
+          where('userId', '==', userId),
+          orderBy('createdAt', 'desc')
+        );
+        
+        unsubscribes.push(onSnapshot(paymentsQuery, (snapshot) => {
+          const paymentsData: Payment[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            paymentsData.push({
+              id: doc.id,
+              invoiceId: data.invoiceId,
+              customerName: data.customerName || 'Unknown Customer',
+              amount: data.amount || 0,
+              date: data.date || new Date().toISOString().split('T')[0],
+              method: data.method || 'cash',
+              processor: data.processor,
+              memo: data.memo,
+              type: data.type || 'invoice_payment',
+              status: data.status || 'completed',
+              createdAt: data.createdAt || new Date().toISOString()
+            });
+          });
+          
+          // Cache for 10 minutes
+          cache.set(cacheKey, paymentsData, 10);
+          setPayments(paymentsData);
+        }));
+      };
 
-    setIsLoading(false);
+      // Load expenses with caching
+      const loadExpenses = () => {
+        const cacheKey = `accounting_expenses_${tenantId}_${userId}`;
+        const cachedExpenses = cache.get<Expense[]>(cacheKey);
+        
+        if (cachedExpenses) {
+          setExpenses(cachedExpenses);
+        }
 
-    return () => {
-      unsubscribes.forEach(unsubscribe => unsubscribe());
+        const expensesQuery = query(
+          collection(db, 'tenants', tenantId, 'expenses'),
+          where('userId', '==', userId),
+          orderBy('createdAt', 'desc')
+        );
+        
+        unsubscribes.push(onSnapshot(expensesQuery, (snapshot) => {
+          const expensesData: Expense[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            expensesData.push({
+              id: doc.id,
+              description: data.description || '',
+              amount: data.amount || 0,
+              date: data.date || new Date().toISOString().split('T')[0],
+              category: data.category || 'Other',
+              subcategory: data.subcategory,
+              vendor: data.vendor,
+              jobId: data.jobId,
+              jobNumber: data.jobNumber,
+              businessUnitId: data.businessUnitId,
+              businessUnit: data.businessUnit,
+              paymentMethod: data.paymentMethod || 'cash',
+              receiptUrl: data.receiptUrl,
+              taxDeductible: data.taxDeductible || false,
+              glAccount: data.glAccount,
+              status: data.status || 'pending',
+              createdBy: data.createdBy || userId,
+              createdAt: data.createdAt || new Date().toISOString(),
+              approvedBy: data.approvedBy,
+              approvedAt: data.approvedAt
+            });
+          });
+          
+          // Cache for 15 minutes
+          cache.set(cacheKey, expensesData, 15);
+          setExpenses(expensesData);
+        }));
+      };
+
+      // Load expense categories with caching
+      const loadExpenseCategories = () => {
+        const cacheKey = `accounting_expense_categories_${tenantId}_${userId}`;
+        const cachedCategories = cache.get<ExpenseCategory[]>(cacheKey);
+        
+        if (cachedCategories) {
+          setExpenseCategories(cachedCategories);
+        }
+
+        const categoriesQuery = query(
+          collection(db, 'tenants', tenantId, 'expenseCategories'),
+          where('userId', '==', userId)
+        );
+        
+        unsubscribes.push(onSnapshot(categoriesQuery, (snapshot) => {
+          const categoriesData: ExpenseCategory[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            categoriesData.push({
+              id: doc.id,
+              name: data.name || '',
+              description: data.description,
+              glAccount: data.glAccount,
+              taxDeductible: data.taxDeductible || false,
+              requiresReceipt: data.requiresReceipt || false,
+              subcategories: data.subcategories || []
+            });
+          });
+          
+          // Cache for 1 hour (categories change less frequently)
+          cache.set(cacheKey, categoriesData, 60);
+          setExpenseCategories(categoriesData);
+        }));
+      };
+
+      // Load all data
+      loadInvoices();
+      loadPayments();
+      loadExpenses();
+      loadExpenseCategories();
+
+      setIsLoading(false);
+
+      return () => {
+        unsubscribes.forEach(unsubscribe => unsubscribe());
+      };
     };
-  }, [db, userId, tenantId]);
+
+    loadAccountingData();
+  }, [db, userId, tenantId, cache]);
 
   // Initialize default expense categories if none exist
   useEffect(() => {

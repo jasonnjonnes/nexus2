@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User, LogOut, Clock, ClockIcon, DollarSign, ClipboardList, Settings, ChevronDown } from 'lucide-react';
+import { User, LogOut, Clock, ClockIcon, DollarSign, ClipboardList, Settings, ChevronDown, Key } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import { useNotifications } from '../contexts/NotificationContext';
@@ -153,6 +153,17 @@ const UserProfileDropdown: React.FC = () => {
             >
               <User size={16} />
               <span>My Profile</span>
+            </button>
+
+            <button
+              onClick={() => {
+                navigate('/settings?tab=people&editUser=' + user?.uid);
+                setIsOpen(false);
+              }}
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 flex items-center space-x-3"
+            >
+              <Key size={16} />
+              <span>Edit Profile & Password</span>
             </button>
 
             <button

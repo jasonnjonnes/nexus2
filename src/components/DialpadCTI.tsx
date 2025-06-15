@@ -6,17 +6,24 @@ interface DialpadCTIProps {
   onAuthenticationChange?: (authenticated: boolean, userId: number | null) => void;
   onIncomingCall?: (callData: any) => void;
   className?: string;
+  isVisible?: boolean;
+  onToggleVisibility?: () => void;
 }
 
 const DialpadCTI: React.FC<DialpadCTIProps> = ({
   clientId,
   onAuthenticationChange,
   onIncomingCall,
-  className = ''
+  className = '',
+  isVisible,
+  onToggleVisibility
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
+  const [internalIsVisible, setInternalIsVisible] = useState(false);
+  
+  // Use external visibility control if provided, otherwise use internal state
+  const dialpadVisible = isVisible !== undefined ? isVisible : internalIsVisible;
   const [incomingCall, setIncomingCall] = useState<any>(null);
 
   useEffect(() => {
@@ -34,7 +41,12 @@ const DialpadCTI: React.FC<DialpadCTIProps> = ({
     const handleCallRinging = (callData: any) => {
       if (callData.state === 'on') {
         setIncomingCall(callData);
-        setIsVisible(true); // Show CTI when call comes in
+        // Show CTI when call comes in (use external toggle if available)
+        if (onToggleVisibility) {
+          onToggleVisibility();
+        } else {
+          setInternalIsVisible(true);
+        }
         onIncomingCall?.(callData);
       } else if (callData.state === 'off') {
         setIncomingCall(null);
@@ -53,11 +65,19 @@ const DialpadCTI: React.FC<DialpadCTIProps> = ({
   }, [clientId, onAuthenticationChange, onIncomingCall]);
 
   const toggleVisibility = () => {
-    setIsVisible(!isVisible);
+    if (onToggleVisibility) {
+      onToggleVisibility();
+    } else {
+      setInternalIsVisible(!internalIsVisible);
+    }
   };
 
   const minimizeCTI = () => {
-    setIsVisible(false);
+    if (onToggleVisibility) {
+      onToggleVisibility();
+    } else {
+      setInternalIsVisible(false);
+    }
   };
 
   return (
@@ -86,7 +106,7 @@ const DialpadCTI: React.FC<DialpadCTIProps> = ({
       </button>
 
       {/* CTI Panel */}
-      {isVisible && (
+      {dialpadVisible && (
         <div className="fixed bottom-20 right-4 z-40 bg-white rounded-lg shadow-2xl border border-gray-200 overflow-hidden">
           {/* Header */}
           <div className="bg-gray-50 px-4 py-2 flex justify-between items-center border-b">

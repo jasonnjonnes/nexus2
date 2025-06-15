@@ -9,7 +9,12 @@ import {
   browserLocalPersistence,
   setPersistence,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  updatePassword,
+  updateEmail,
+  sendPasswordResetEmail,
+  reauthenticateWithCredential,
+  EmailAuthProvider
 } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { auth } from '../firebase';
@@ -27,6 +32,10 @@ interface AuthContextType {
   register: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  updateUserPassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  updateUserEmail: (newEmail: string, currentPassword: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
+  isAdmin: () => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -138,6 +147,67 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
+  const updateUserPassword = async (currentPassword: string, newPassword: string) => {
+    if (!user) throw new Error('No user logged in');
+    
+    setLoading(true);
+    setError(null);
+    try {
+      // Re-authenticate user before changing password
+      const credential = EmailAuthProvider.credential(user.email!, currentPassword);
+      await reauthenticateWithCredential(user, credential);
+      
+      // Update password
+      await updatePassword(user, newPassword);
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateUserEmail = async (newEmail: string, currentPassword: string) => {
+    if (!user) throw new Error('No user logged in');
+    
+    setLoading(true);
+    setError(null);
+    try {
+      // Re-authenticate user before changing email
+      const credential = EmailAuthProvider.credential(user.email!, currentPassword);
+      await reauthenticateWithCredential(user, credential);
+      
+      // Update email
+      await updateEmail(user, newEmail);
+      
+      // Refresh user data
+      await user.reload();
+      setUser({ ...user });
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const sendPasswordReset = async (email: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isAdmin = () => {
+    return role === 'admin';
+  };
+
   const value = useMemo(() => ({
     user,
     loading,
@@ -147,7 +217,11 @@ export const FirebaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     login,
     register,
     logout,
-    signInWithGoogle
+    signInWithGoogle,
+    updateUserPassword,
+    updateUserEmail,
+    sendPasswordReset,
+    isAdmin
   }), [user, loading, error, tenantId, role]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

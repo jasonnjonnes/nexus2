@@ -8,7 +8,10 @@ import GLAccounts from '../components/GLAccounts';
 import StaffInvitationModal from '../components/StaffInvitationModal';
 import AuthMethodManager from '../components/AuthMethodManager';
 import StripeAccountOnboarding from '../components/StripeAccountOnboarding';
+import ProfileEditModal from '../components/ProfileEditModal';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import { useCache } from '../contexts/CacheContext';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { db } from '../firebase';
 
 interface SettingItem {
@@ -929,6 +932,7 @@ interface BusinessUnitFormData extends Omit<BusinessUnit, 'id' | 'userId'> {
 }
 
 const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, userId, tenantId }) => {
+  const cache = useCache();
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
   const [editingUnit, setEditingUnit] = useState<BusinessUnit | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -954,46 +958,74 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
   useEffect(() => {
     if (!db || !userId) return;
 
-    const businessUnitsQuery = query(
-      collection(db, 'tenants', tenantId, 'businessUnits'),
-      where("userId", "==", userId)
-    );
+    const loadBusinessUnits = async () => {
+      const cacheKey = `business_units_${tenantId}_${userId}`;
+      
+      // Try to get from cache first
+      const cachedBusinessUnits = cache.get<BusinessUnit[]>(cacheKey);
+      if (cachedBusinessUnits) {
+        setBusinessUnits(cachedBusinessUnits);
+        setIsLoading(false);
+        return;
+      }
 
-    const unsubscribe = onSnapshot(businessUnitsQuery, (querySnapshot) => {
-      const units: BusinessUnit[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        units.push({
-          id: doc.id,
-          userId,
-          name: data.name || '',
-          officialName: data.officialName || '',
-          email: data.email || '',
-          bccEmail: data.bccEmail || '',
-          phoneNumber: data.phoneNumber || '',
-          trade: data.trade || '',
-          division: data.division || '',
-          tags: data.tags || [],
-          defaultWarehouse: data.defaultWarehouse || '',
-          currency: data.currency || 'USD',
-          invoiceHeader: data.invoiceHeader || '',
-          invoiceMessage: data.invoiceMessage || '',
-          logo: data.logo || '',
-          isActive: data.isActive ?? true,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt
+      try {
+        cache.setLoading(cacheKey, true);
+        
+        const businessUnitsQuery = query(
+          collection(db, 'tenants', tenantId, 'businessUnits'),
+          where("userId", "==", userId)
+        );
+
+        const unsubscribe = onSnapshot(businessUnitsQuery, (querySnapshot) => {
+          const units: BusinessUnit[] = [];
+          querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            units.push({
+              id: doc.id,
+              userId,
+              name: data.name || '',
+              officialName: data.officialName || '',
+              email: data.email || '',
+              bccEmail: data.bccEmail || '',
+              phoneNumber: data.phoneNumber || '',
+              trade: data.trade || '',
+              division: data.division || '',
+              tags: data.tags || [],
+              defaultWarehouse: data.defaultWarehouse || '',
+              currency: data.currency || 'USD',
+              invoiceHeader: data.invoiceHeader || '',
+              invoiceMessage: data.invoiceMessage || '',
+              logo: data.logo || '',
+              isActive: data.isActive ?? true,
+              createdAt: data.createdAt,
+              updatedAt: data.updatedAt
+            });
+          });
+          
+          // Cache the business units data for 1 hour
+          cache.set(cacheKey, units, 60);
+          setBusinessUnits(units);
+          setIsLoading(false);
+          cache.setLoading(cacheKey, false);
+        }, (error) => {
+          console.error("Error loading business units:", error);
+          setError("Failed to load business units");
+          setIsLoading(false);
+          cache.setLoading(cacheKey, false);
         });
-      });
-      setBusinessUnits(units);
-      setIsLoading(false);
-    }, (error) => {
-      console.error("Error loading business units:", error);
-      setError("Failed to load business units");
-      setIsLoading(false);
-    });
 
-    return () => unsubscribe();
-  }, [db, userId]);
+        return () => unsubscribe();
+      } catch (error) {
+        console.error("Error setting up business units listener:", error);
+        setError("Failed to load business units");
+        setIsLoading(false);
+        cache.setLoading(cacheKey, false);
+      }
+    };
+
+    loadBusinessUnits();
+  }, [db, userId, tenantId, cache]);
 
   const handleDelete = async (unitId: string): Promise<void> => {
     if (!db) {
@@ -1004,6 +1036,9 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
     if (window.confirm("Are you sure you want to delete this business unit?")) {
       try {
         await deleteDoc(doc(db, 'tenants', tenantId, 'businessUnits', unitId));
+        
+        // Clear cache to force refresh
+        cache.remove(`business_units_${tenantId}_${userId}`);
       } catch (e) {
         const errorMessage = e instanceof Error ? e.message : "Failed to delete business unit";
         console.error("Error deleting business unit:", e);
@@ -1077,12 +1112,15 @@ const BusinessUnitsManagement: React.FC<BusinessUnitsManagementProps> = ({ db, u
       };
 
       if (editingUnit) {
-                  await updateDoc(doc(db, 'tenants', tenantId, 'businessUnits', editingUnit.id), unitData);
+        await updateDoc(doc(db, 'tenants', tenantId, 'businessUnits', editingUnit.id), unitData);
       } else {
         unitData.createdAt = new Date().toISOString();
         await addDoc(collection(db, 'tenants', tenantId, 'businessUnits'), unitData);
       }
 
+      // Clear cache to force refresh
+      cache.remove(`business_units_${tenantId}_${userId}`);
+      
       setEditingUnit(null);
       setShowForm(false);
       setFormData({
@@ -2317,19 +2355,29 @@ interface CompanyProfile {
 }
 
 const Settings: React.FC = () => {
-  const { user, tenantId } = useFirebaseAuth();
-  const userId = user?.uid;
-  const [expandedSections, setExpandedSections] = useState<string[]>(['Staff Management']);
-  const [selectedItem, setSelectedItem] = useState<string>('company-profile');
-  const [searchTerm, setSearchTerm] = useState('');
+  const location = useLocation();
+  const navigate = useNavigate();
   
-  // Separate state for office staff and technicians
+  const [selectedItem, setSelectedItem] = useState('office');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [expandedSections, setExpandedSections] = useState<string[]>(['People']);
+  
+  // Firebase state
+  const { user, tenantId, isAdmin } = useFirebaseAuth();
+  const userId = user?.uid || null;
+  const cache = useCache();
+  
+  // Staff form state
   const [showOfficeStaffForm, setShowOfficeStaffForm] = useState(false);
   const [showTechnicianForm, setShowTechnicianForm] = useState(false);
   const [editingOfficeStaff, setEditingOfficeStaff] = useState<StaffMember | null>(null);
   const [editingTechnician, setEditingTechnician] = useState<StaffMember | null>(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteStaffType, setInviteStaffType] = useState<'office' | 'technician'>('office');
+  
+  // Profile editing state
+  const [showProfileEditModal, setShowProfileEditModal] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
   
   // Remove old Firebase state - use context instead
   const [isLoading, setIsLoading] = useState(true);
@@ -2340,7 +2388,19 @@ const Settings: React.FC = () => {
   const loadStaff = async () => {
     if (!db || !userId || !tenantId) return;
 
+    const cacheKey = `staff_${tenantId}_${userId}`;
+    
+    // Try to get from cache first
+    const cachedStaff = cache.get<StaffMember[]>(cacheKey);
+    if (cachedStaff) {
+      setOfficeStaff(cachedStaff.filter(staff => staff.type === 'office'));
+      setTechnicians(cachedStaff.filter(staff => staff.type === 'technician'));
+      return;
+    }
+
     try {
+      cache.setLoading(cacheKey, true);
+      
       const staffRef = collection(db, 'tenants', tenantId, 'staff');
       const staffSnapshot = await getDocs(staffRef);
       const staffList = staffSnapshot.docs.map(doc => ({
@@ -2348,11 +2408,16 @@ const Settings: React.FC = () => {
         ...doc.data()
       })) as StaffMember[];
 
+      // Cache the staff data for 1 hour
+      cache.set(cacheKey, staffList, 60);
+      
       setOfficeStaff(staffList.filter(staff => staff.type === 'office'));
       setTechnicians(staffList.filter(staff => staff.type === 'technician'));
     } catch (err) {
       console.error('Error loading staff:', err);
       setError('Failed to load staff members. Please try again.');
+    } finally {
+      cache.setLoading(cacheKey, false);
     }
   };
 
@@ -2361,7 +2426,30 @@ const Settings: React.FC = () => {
       setIsLoading(true);
       loadStaff().finally(() => setIsLoading(false));
     }
-  }, [db, userId, tenantId]);
+  }, [db, userId, tenantId, cache]);
+
+  // Handle URL parameters for profile editing
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const tab = searchParams.get('tab');
+    const editUser = searchParams.get('editUser');
+
+    if (tab === 'people' && editUser) {
+      setSelectedItem('office'); // Default to office tab
+      setExpandedSections(prev => prev.includes('People') ? prev : [...prev, 'People']);
+      setEditingUserId(editUser);
+      setShowProfileEditModal(true);
+    }
+  }, [location]);
+
+  // Clean up URL parameters when modal closes
+  const handleCloseProfileEdit = () => {
+    setShowProfileEditModal(false);
+    setEditingUserId(null);
+    // Clear URL parameters
+    const newUrl = location.pathname;
+    navigate(newUrl, { replace: true });
+  };
 
   const handleSaveStaff = async (staffData: Omit<StaffMember, 'id'>) => {
     if (!db || !userId || !tenantId) return;
@@ -2393,7 +2481,9 @@ const Settings: React.FC = () => {
           setShowTechnicianForm(false);
         }
       }
-      // Refresh staff list
+      
+      // Clear cache and refresh staff list
+      cache.remove(`staff_${tenantId}_${userId}`);
       await loadStaff();
     } catch (err) {
       console.error('Error saving staff:', err);
@@ -2407,7 +2497,9 @@ const Settings: React.FC = () => {
     if (window.confirm('Are you sure you want to delete this staff member?')) {
       try {
         await deleteDoc(doc(db, 'tenants', tenantId, 'staff', staffId));
-        // Refresh staff list
+        
+        // Clear cache and refresh staff list
+        cache.remove(`staff_${tenantId}_${userId}`);
         await loadStaff();
       } catch (err) {
         console.error('Error deleting staff:', err);
@@ -2609,6 +2701,14 @@ const Settings: React.FC = () => {
         isOpen={showInviteModal}
         onClose={() => setShowInviteModal(false)}
         staffType={inviteStaffType}
+      />
+
+      {/* Profile Edit Modal */}
+      <ProfileEditModal
+        isOpen={showProfileEditModal}
+        onClose={handleCloseProfileEdit}
+        userId={editingUserId || undefined}
+        isCurrentUser={editingUserId === userId}
       />
     </div>
   );
