@@ -6,6 +6,7 @@ import * as cors from 'cors';
 // Import email service functions
 import { getEmails, sendEmail, markEmailAsRead, moveEmailToFolder, receiveEmail, addEmailAccount, getEmailAccounts } from './emailService';
 import { handleGmailOAuth, refreshGmailToken, syncGmailEmails } from './gmailOAuth';
+import { sendInvitationEmail, testEmailConfiguration } from './sendInvitationEmail';
 
 admin.initializeApp();
 
@@ -650,4 +651,4 @@ app.get('/health', (req, res) => {
 export const api = functions.https.onRequest(app);
 
 // Export email service functions
-export { getEmails, sendEmail, markEmailAsRead, moveEmailToFolder, receiveEmail, addEmailAccount, getEmailAccounts, handleGmailOAuth, refreshGmailToken, syncGmailEmails }; 
+export { getEmails, sendEmail, markEmailAsRead, moveEmailToFolder, receiveEmail, addEmailAccount, getEmailAccounts, handleGmailOAuth, refreshGmailToken, syncGmailEmails, sendInvitationEmail, testEmailConfiguration }; 

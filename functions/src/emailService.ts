@@ -1,6 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import * as nodemailer from 'nodemailer';
+import * as crypto from 'crypto';
 
 // Configuration for higher memory allocation
 const runtimeOpts: functions.RuntimeOptions = {
@@ -315,24 +316,22 @@ export const addEmailAccount = functions.runWith(runtimeOpts).https.onCall(async
 
     await accountRef.set(accountData);
 
-    // Generate OAuth URL based on provider
-    let oauthUrl = '';
-    switch (provider) {
-      case 'gmail':
-        oauthUrl = generateGmailOAuthUrl(accountRef.id);
-        console.log('Generated Gmail OAuth URL:', oauthUrl);
-        break;
-      case 'outlook':
-        oauthUrl = generateOutlookOAuthUrl(accountRef.id);
-        break;
-      case 'icloud':
-        oauthUrl = generateICloudOAuthUrl(accountRef.id);
-        break;
-      case 'yahoo':
-        oauthUrl = generateYahooOAuthUrl(accountRef.id);
-        break;
-      default:
-        oauthUrl = `${functions.config().app?.url || 'http://localhost:3000'}/email-setup?provider=${provider}`;
+    // Generate a more robust state object
+    const stateObject = {
+      tenantId: tenantId,
+      provider: provider,
+      email: email,
+      returnUrl: req.get('origin') || functions.config().app?.url || 'http://localhost:5173',
+      // Add a CSRF token for security
+      csrfToken: crypto.randomBytes(16).toString('hex'),
+    };
+    
+    const state = Buffer.from(JSON.stringify(stateObject)).toString('base64');
+    
+    const oauthUrl = emailProvider.generateOAuthUrl(state);
+    
+    if (!oauthUrl) {
+      throw new functions.https.HttpsError('internal', 'Failed to generate OAuth URL');
     }
 
     return {

@@ -3,6 +3,7 @@ import { X, Mail, User, Shield, Copy, Check } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 interface StaffInvitationModalProps {
   isOpen: boolean;
@@ -97,30 +98,40 @@ const StaffInvitationModal: React.FC<StaffInvitationModalProps> = ({
   };
 
   const sendInvitationEmail = async (email: string, link: string, data: InvitationData, type: string) => {
-    // This is a placeholder for email integration
-    // You would integrate with services like SendGrid, AWS SES, or Firebase Functions
-    console.log('Sending invitation email to:', email);
-    console.log('Invitation link:', link);
-    console.log('Staff type:', type);
-    console.log('Data:', data);
-    
-    // For now, we'll just log the email content
-    const emailContent = `
-      Hi ${data.firstName},
+    try {
+      const functions = getFunctions();
+      const sendEmail = httpsCallable(functions, 'sendInvitationEmail');
       
-      You've been invited to join our team as a ${data.role} in the ${data.businessUnit} department.
+      const emailData = {
+        email: email,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        role: data.role,
+        businessUnit: data.businessUnit,
+        invitationLink: link,
+        message: data.message,
+        companyName: 'Your Company', // You can get this from company settings
+        invitedByEmail: user?.email
+      };
       
-      Click the link below to create your account:
-      ${link}
+      console.log('Sending invitation email via Firebase Function...');
+      const result = await sendEmail(emailData);
       
-      This invitation will expire in 7 days.
+      console.log('Email sent successfully:', result.data);
+      return result.data;
       
-      ${data.message ? `Message from your manager: ${data.message}` : ''}
+    } catch (error) {
+      console.error('Failed to send invitation email:', error);
       
-      Welcome to the team!
-    `;
-    
-    console.log('Email content:', emailContent);
+      // Fallback: log the email content for manual sending
+      console.log('Email fallback - manual sending required:');
+      console.log('To:', email);
+      console.log('Subject: You\'re invited to join our team as a', data.role);
+      console.log('Invitation link:', link);
+      
+      // Don't throw error - we still want to show the invitation link
+      // throw new Error('Failed to send invitation email');
+    }
   };
 
   const copyToClipboard = async () => {

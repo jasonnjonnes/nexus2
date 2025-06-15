@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Email Invitation Function</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        .container { background: #f9f9f9; padding: 30px; border-radius: 8px; }
+        button { background: #3B82F6; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; margin: 10px 0; }
+        button:hover { background: #2563EB; }
+        .result { margin: 20px 0; padding: 15px; border-radius: 6px; }
+        .success { background: #d1fae5; color: #065f46; border: 1px solid #10b981; }
+        .error { background: #fee2e2; color: #991b1b; border: 1px solid #ef4444; }
+        input, select { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ccc; border-radius: 4px; }
+        label { display: block; margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test Email Invitation Function</h1>
+        <p>This page tests the Firebase Function for sending staff invitation emails.</p>
+        
+        <h3>📧 Test Configuration</h3>
+        <button onclick="testEmailConfig()">Test Email Configuration</button>
+        <div id="configResult"></div>
+        
+        <h3>📨 Send Test Invitation</h3>
+        <form onsubmit="sendTestInvitation(event)">
+            <label>Email Address:</label>
+            <input type="email" id="email" value="test@example.com" required>
+            
+            <label>First Name:</label>
+            <input type="text" id="firstName" value="John" required>
+            
+            <label>Last Name:</label>
+            <input type="text" id="lastName" value="Doe" required>
+            
+            <label>Role:</label>
+            <select id="role" required>
+                <option value="Technician">Technician</option>
+                <option value="Office Staff">Office Staff</option>
+                <option value="Manager">Manager</option>
+            </select>
+            
+            <label>Business Unit:</label>
+            <input type="text" id="businessUnit" value="Residential" required>
+            
+            <label>Personal Message (Optional):</label>
+            <input type="text" id="message" placeholder="Welcome to our team!">
+            
+            <button type="submit">Send Test Invitation</button>
+        </form>
+        <div id="invitationResult"></div>
+        
+        <h3>📋 Instructions</h3>
+        <ol>
+            <li><strong>First</strong>: Test the email configuration</li>
+            <li><strong>Then</strong>: Send a test invitation to your own email</li>
+            <li><strong>Check</strong>: Browser console for detailed logs</li>
+            <li><strong>Note</strong>: You need to configure email credentials first (see setup-email-config.md)</li>
+        </ol>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-functions.js';
+
+        // Your Firebase config (replace with your actual config)
+        const firebaseConfig = {
+            apiKey: "AIzaSyBvOkBH0IuFiZ8FddTuZ7O6UqLLVKjI-Uw",
+            authDomain: "servicepro-4c705.firebaseapp.com",
+            projectId: "servicepro-4c705",
+            storageBucket: "servicepro-4c705.firebasestorage.app",
+            messagingSenderId: "541335321876",
+            appId: "1:541335321876:web:8b8c4c4c4c4c4c4c4c4c4c"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const functions = getFunctions(app);
+
+        // Sign in anonymously for testing
+        signInAnonymously(auth).then(() => {
+            console.log('Signed in anonymously for testing');
+        }).catch((error) => {
+            console.error('Error signing in:', error);
+        });
+
+        // Test email configuration
+        window.testEmailConfig = async function() {
+            const resultDiv = document.getElementById('configResult');
+            resultDiv.innerHTML = '<p>Testing email configuration...</p>';
+            
+            try {
+                const testEmail = httpsCallable(functions, 'testEmailConfiguration');
+                const result = await testEmail();
+                
+                resultDiv.innerHTML = `<div class="result success">
+                    <strong>✅ Success!</strong><br>
+                    ${result.data.message}
+                </div>`;
+                console.log('Email config test result:', result.data);
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="result error">
+                    <strong>❌ Error:</strong><br>
+                    ${error.message}
+                </div>`;
+                console.error('Email config test error:', error);
+            }
+        };
+
+        // Send test invitation
+        window.sendTestInvitation = async function(event) {
+            event.preventDefault();
+            
+            const resultDiv = document.getElementById('invitationResult');
+            resultDiv.innerHTML = '<p>Sending test invitation...</p>';
+            
+            const emailData = {
+                email: document.getElementById('email').value,
+                firstName: document.getElementById('firstName').value,
+                lastName: document.getElementById('lastName').value,
+                role: document.getElementById('role').value,
+                businessUnit: document.getElementById('businessUnit').value,
+                invitationLink: 'https://yourapp.com/invite/test-token-123',
+                message: document.getElementById('message').value,
+                companyName: 'Test Company'
+            };
+            
+            try {
+                const sendEmail = httpsCallable(functions, 'sendInvitationEmail');
+                const result = await sendEmail(emailData);
+                
+                resultDiv.innerHTML = `<div class="result success">
+                    <strong>✅ Email Sent Successfully!</strong><br>
+                    Message ID: ${result.data.messageId}<br>
+                    Check your email inbox!
+                </div>`;
+                console.log('Email sent successfully:', result.data);
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="result error">
+                    <strong>❌ Error:</strong><br>
+                    ${error.message}
+                </div>`;
+                console.error('Email sending error:', error);
+            }
+        };
+    </script>
+</body>
+</html> 

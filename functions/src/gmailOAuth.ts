@@ -41,7 +41,8 @@ export const handleGmailOAuth = functions.runWith(runtimeOpts).https.onRequest(a
   }
 
   try {
-    const { code, state, error } = req.query;
+    const { code, state, error, popup } = req.query;
+    const isPopup = popup === 'true';
 
     // Handle OAuth errors
     if (error) {
@@ -87,6 +88,21 @@ export const handleGmailOAuth = functions.runWith(runtimeOpts).https.onRequest(a
       res.status(400).json({ error: 'Missing authorization code or state' });
       return;
     }
+
+    let decodedState;
+    try {
+      const stateJson = Buffer.from(state as string, 'base64').toString('utf-8');
+      decodedState = JSON.parse(stateJson);
+    } catch (e) {
+      console.error('Invalid state parameter:', e);
+      res.status(400).json({ error: 'Invalid state parameter' });
+      return;
+    }
+
+    const { tenantId, returnUrl, csrfToken } = decodedState;
+    
+    // Optional: Verify CSRF token if you implement it on the client side
+    // For example, by storing it in the user's session or a secure, httpOnly cookie
 
     // Verify state parameter (account ID from our database)
     const accountId = state as string;
@@ -195,8 +211,10 @@ export const handleGmailOAuth = functions.runWith(runtimeOpts).https.onRequest(a
     });
 
     // Redirect back to the application with success
-    const appUrl = origin || functions.config().app?.url || 'http://localhost:5173';
+    const appUrl = returnUrl || functions.config().app?.url || 'http://localhost:5173';
     const successUrl = `${appUrl}/inbound?oauth_success=true&provider=gmail`;
+    
+    console.log('OAuth success, isPopup:', isPopup);
     
     // Always return HTML that can handle both popup and redirect scenarios
     const html = `
