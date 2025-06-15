@@ -59,14 +59,8 @@ const CACHE_CONFIG = {
 export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const cacheRef = useRef<Map<string, CacheEntry>>(new Map());
   const loadingStatesRef = useRef<Map<string, boolean>>(new Map());
-  const [, forceUpdate] = useState({});
-  const [hitCount, setHitCount] = useState(0);
-  const [missCount, setMissCount] = useState(0);
-
-  // Force re-render when cache changes
-  const triggerUpdate = useCallback(() => {
-    forceUpdate({});
-  }, []);
+  const hitCountRef = useRef(0);
+  const missCountRef = useRef(0);
 
   // Load cache from localStorage on mount
   useEffect(() => {
@@ -100,7 +94,7 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         
         cacheRef.current = cacheData;
-        console.log(`Cache loaded: ${cacheData.size} entries`);
+        console.log(`Cache loaded: ${cacheData.size} entries from localStorage`);
       } catch (error) {
         console.error('Error loading cache from localStorage:', error);
       }
@@ -152,7 +146,7 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const cache = cacheRef.current;
     const entry = cache.get(key);
     if (!entry) {
-      setMissCount(prev => prev + 1);
+      missCountRef.current++;
       return null;
     }
 
@@ -161,11 +155,11 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Entry expired
       cache.delete(key);
       localStorage.removeItem(CACHE_PREFIX + key);
-      setMissCount(prev => prev + 1);
+      missCountRef.current++;
       return null;
     }
 
-    setHitCount(prev => prev + 1);
+    hitCountRef.current++;
     return entry.data as T;
   }, []);
 
@@ -204,8 +198,8 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     keysToRemove.forEach(key => localStorage.removeItem(key));
     
     // Reset stats
-    setHitCount(0);
-    setMissCount(0);
+    hitCountRef.current = 0;
+    missCountRef.current = 0;
     
     console.log('Cache cleared');
   }, []);
@@ -229,31 +223,33 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   // Specific data cache methods
-  const getPricebook = useCallback(() => get<any[]>('pricebook'), [get]);
-  const setPricebook = useCallback((data: any[]) => set('pricebook', data, CACHE_CONFIG.pricebook.ttl), [set]);
+  const getPricebook = useCallback(() => get<any[]>('pricebook'), []);
+  const setPricebook = useCallback((data: any[]) => set('pricebook', data, CACHE_CONFIG.pricebook.ttl), []);
 
-  const getCustomers = useCallback(() => get<any[]>('customers'), [get]);
-  const setCustomers = useCallback((data: any[]) => set('customers', data, CACHE_CONFIG.customers.ttl), [set]);
+  const getCustomers = useCallback(() => get<any[]>('customers'), []);
+  const setCustomers = useCallback((data: any[]) => set('customers', data, CACHE_CONFIG.customers.ttl), []);
 
-  const getJobs = useCallback(() => get<any[]>('jobs'), [get]);
-  const setJobs = useCallback((data: any[]) => set('jobs', data, CACHE_CONFIG.jobs.ttl), [set]);
+  const getJobs = useCallback(() => get<any[]>('jobs'), []);
+  const setJobs = useCallback((data: any[]) => set('jobs', data, CACHE_CONFIG.jobs.ttl), []);
 
-  const getStaff = useCallback(() => get<any[]>('staff'), [get]);
-  const setStaff = useCallback((data: any[]) => set('staff', data, CACHE_CONFIG.staff.ttl), [set]);
+  const getStaff = useCallback(() => get<any[]>('staff'), []);
+  const setStaff = useCallback((data: any[]) => set('staff', data, CACHE_CONFIG.staff.ttl), []);
 
-  const getBusinessUnits = useCallback(() => get<any[]>('business_units'), [get]);
-  const setBusinessUnits = useCallback((data: any[]) => set('business_units', data, CACHE_CONFIG.businessUnits.ttl), [set]);
+  const getBusinessUnits = useCallback(() => get<any[]>('business_units'), []);
+  const setBusinessUnits = useCallback((data: any[]) => set('business_units', data, CACHE_CONFIG.businessUnits.ttl), []);
 
-  const getJobTypes = useCallback(() => get<any[]>('job_types'), [get]);
-  const setJobTypes = useCallback((data: any[]) => set('job_types', data, CACHE_CONFIG.jobTypes.ttl), [set]);
+  const getJobTypes = useCallback(() => get<any[]>('job_types'), []);
+  const setJobTypes = useCallback((data: any[]) => set('job_types', data, CACHE_CONFIG.jobTypes.ttl), []);
 
-  const getEmails = useCallback(() => get<any[]>('emails'), [get]);
-  const setEmails = useCallback((data: any[]) => set('emails', data, CACHE_CONFIG.emails.ttl), [set]);
+  const getEmails = useCallback(() => get<any[]>('emails'), []);
+  const setEmails = useCallback((data: any[]) => set('emails', data, CACHE_CONFIG.emails.ttl), []);
 
   // Cache stats
   const getCacheStats = useCallback(() => {
     const cache = cacheRef.current;
     const totalEntries = cache.size;
+    const hitCount = hitCountRef.current;
+    const missCount = missCountRef.current;
     const totalRequests = hitCount + missCount;
     const hitRate = totalRequests > 0 ? (hitCount / totalRequests) * 100 : 0;
     
@@ -274,7 +270,7 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       totalSize: formatSize(totalSize),
       hitRate: Math.round(hitRate)
     };
-  }, [hitCount, missCount]);
+  }, []);
 
   // Loading state management
   const isLoading = useCallback((key: string) => {
@@ -338,13 +334,7 @@ export const CacheProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     getCacheStats,
     isLoading,
     setLoading
-  }), [
-    get, set, remove, clear, invalidate,
-    getPricebook, setPricebook, getCustomers, setCustomers,
-    getJobs, setJobs, getStaff, setStaff,
-    getBusinessUnits, setBusinessUnits, getJobTypes, setJobTypes,
-    getEmails, setEmails, getCacheStats, isLoading, setLoading
-  ]);
+  }), []); // All functions are now stable
 
   return (
     <CacheContext.Provider value={value}>
