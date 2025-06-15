@@ -2566,7 +2566,7 @@ const Settings: React.FC = () => {
                            <JobTypesManagement db={db} userId={userId} tenantId={tenantId} />
           )}
         
-        {selectedItem === 'office-staff' && db && userId && (
+        {selectedItem === 'office' && db && userId && (
           <div className="space-y-6">
             <StaffList
               staffType="office"
