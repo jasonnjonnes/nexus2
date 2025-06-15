@@ -181,40 +181,7 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ toggleSidebar, theme, tog
         />
       )}
 
-      {/* Dialpad Modal Overlay */}
-      {isDialpadOpen && dialpadClientId && (
-        <div className="fixed inset-0 bg-black bg-opacity-25 z-40 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-2xl border border-gray-200 dark:border-slate-700 max-w-md w-full">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700">
-              <div className="flex items-center gap-2">
-                <Phone size={20} className="text-blue-600 dark:text-blue-400" />
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Dialpad</h3>
-              </div>
-              <button
-                onClick={() => setIsDialpadOpen(false)}
-                className="p-1 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
-            </div>
-            
-            {/* Dialpad Content */}
-            <div className="p-4">
-              <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-                <Phone size={48} className="mx-auto mb-4 opacity-50" />
-                <p className="text-lg font-medium mb-2">Dialpad Integration</p>
-                <p className="text-sm">Configure your Dialpad Client ID in environment variables to enable calling functionality.</p>
-                <div className="mt-4 p-3 bg-gray-100 dark:bg-slate-700 rounded-lg text-xs font-mono">
-                  VITE_DIALPAD_CLIENT_ID=your_actual_client_id
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+
     </>
   );
 };

@@ -27,8 +27,12 @@ const DialpadCTI: React.FC<DialpadCTIProps> = ({
   const [incomingCall, setIncomingCall] = useState<any>(null);
 
   useEffect(() => {
-    if (!containerRef.current || !clientId) return;
+    if (!containerRef.current || !clientId) {
+      console.log('DialpadCTI: Missing container or clientId', { container: !!containerRef.current, clientId });
+      return;
+    }
 
+    console.log('DialpadCTI: Initializing with clientId:', clientId);
     // Initialize CTI
     dialpadService.initializeCTI(clientId, containerRef.current);
 

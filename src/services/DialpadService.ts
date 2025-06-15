@@ -50,8 +50,12 @@ export class DialpadService {
    * Initialize the CTI with the provided client ID
    */
   initializeCTI(clientId: string, container: HTMLElement): void {
+    console.log('DialpadService: Initializing CTI with clientId:', clientId);
     const iframe = document.createElement('iframe');
-    iframe.src = `https://dialpad.com/apps/${clientId}`;
+    const iframeUrl = `https://dialpad.com/apps/${clientId}`;
+    console.log('DialpadService: Creating iframe with URL:', iframeUrl);
+    
+    iframe.src = iframeUrl;
     iframe.title = 'Dialpad CTI';
     iframe.allow = 'microphone; speaker-selection; autoplay; camera; display-capture; hid';
     iframe.sandbox = 'allow-popups allow-scripts allow-same-origin';
