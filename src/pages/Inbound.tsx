@@ -467,7 +467,7 @@ const Inbound: React.FC = () => {
   };
 
   // Dialpad CTI configuration
-  const dialpadClientId = 'q3QPMk5mVP44sraUP7ngse3ER';
+  const dialpadClientId = import.meta.env.VITE_DIALPAD_CLIENT_ID;
 
   const handleIncomingCall = (callData: any) => {
     console.log('Incoming call:', callData);

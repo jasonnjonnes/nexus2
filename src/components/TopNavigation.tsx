@@ -22,7 +22,7 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ toggleSidebar, theme, tog
   const [isDialpadOpen, setIsDialpadOpen] = useState(false);
   
   // Dialpad configuration
-  const dialpadClientId = 'q3QPMk5mVP44sraUP7ngse3ER';
+  const dialpadClientId = import.meta.env.VITE_DIALPAD_CLIENT_ID;
   
   const handleIncomingCall = (callData: any) => {
     console.log('Incoming call:', callData);
