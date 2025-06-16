@@ -718,6 +718,7 @@ const StaffForm: React.FC<StaffFormProps> = ({ onCancel, onSave, staffType, edit
 interface StaffListProps {
   staffType: 'office' | 'technician';
   staff: StaffMember[];
+  pendingInvitations: any[];
   onEdit: (staff: StaffMember) => void;
   onDelete: (staffId: string) => void;
   onSetEditingStaff: (staff: StaffMember | null) => void;
@@ -725,18 +726,23 @@ interface StaffListProps {
   onCreateOwnerProfile?: () => void;
   creatingOwnerProfile?: boolean;
   currentUserId?: string;
+  onResendInvitation?: (invitationId: string) => void;
+  onCancelInvitation?: (invitationId: string) => void;
 }
 
 const StaffList: React.FC<StaffListProps> = ({
   staffType,
   staff,
+  pendingInvitations,
   onEdit,
   onDelete,
   onSetEditingStaff,
   onInvite,
   onCreateOwnerProfile,
   creatingOwnerProfile = false,
-  currentUserId
+  currentUserId,
+  onResendInvitation,
+  onCancelInvitation
 }) => {
   type RoleColor = {
     [key: string]: string;
@@ -756,6 +762,11 @@ const StaffList: React.FC<StaffListProps> = ({
     return roleColors[role] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
   };
 
+  // Combine staff and pending invitations for the current staff type
+  const filteredPendingInvitations = pendingInvitations.filter(invitation => invitation.type === staffType);
+  const combinedList = [...staff, ...filteredPendingInvitations];
+  const totalCount = combinedList.length;
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -772,7 +783,7 @@ const StaffList: React.FC<StaffListProps> = ({
           </button>
         </div>
       </div>
-      {staff.length === 0 ? (
+      {totalCount === 0 ? (
         <div className="p-8 text-center">
           <User size={48} className="mx-auto text-gray-400 dark:text-gray-500 mb-4" />
           <h4 className="text-lg font-medium text-gray-800 dark:text-gray-200 mb-2">
@@ -839,7 +850,7 @@ const StaffList: React.FC<StaffListProps> = ({
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
-              {staff.map(member => (
+              {combinedList.map(member => (
                 <tr key={member.id} className="hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                                           <div className="flex items-center">
@@ -907,6 +918,8 @@ const StaffList: React.FC<StaffListProps> = ({
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                       member.status === 'active' 
                         ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                        : member.status === 'pending'
+                        ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
                         : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
                     }`}>
                       {member.status}
@@ -914,22 +927,46 @@ const StaffList: React.FC<StaffListProps> = ({
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex justify-end space-x-2">
-                      <button
-                        onClick={() => {
-                          onSetEditingStaff(member);
-                          onEdit(member);
-                        }}
-                        className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors flex items-center"
-                      >
-                        <Edit size={14} className="mr-1" />
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => onDelete(member.id)}
-                        className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
-                      >
-                        Delete
-                      </button>
+                      {member.isPendingInvitation ? (
+                        <>
+                          {onResendInvitation && (
+                            <button
+                              onClick={() => onResendInvitation(member.id)}
+                              className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors flex items-center"
+                            >
+                              <Mail size={14} className="mr-1" />
+                              Resend
+                            </button>
+                          )}
+                          {onCancelInvitation && (
+                            <button
+                              onClick={() => onCancelInvitation(member.id)}
+                              className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => {
+                              onSetEditingStaff(member);
+                              onEdit(member);
+                            }}
+                            className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors flex items-center"
+                          >
+                            <Edit size={14} className="mr-1" />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => onDelete(member.id)}
+                            className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -2891,7 +2928,44 @@ const Settings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
   const [technicians, setTechnicians] = useState<StaffMember[]>([]);
+  const [pendingInvitations, setPendingInvitations] = useState<any[]>([]);
   const [creatingOwnerProfile, setCreatingOwnerProfile] = useState(false);
+
+  const loadPendingInvitations = useCallback(async () => {
+    if (!db || !userId || !tenantId) {
+      console.log('loadPendingInvitations: Missing required data', { db: !!db, userId, tenantId });
+      return;
+    }
+
+    try {
+      console.log('loadPendingInvitations: Fetching from Firebase', { tenantId });
+      const invitationsRef = collection(db, 'tenants', tenantId, 'invitations');
+      const pendingQuery = query(invitationsRef, where('status', '==', 'pending'), where('used', '==', false));
+      const invitationsSnapshot = await getDocs(pendingQuery);
+      
+      console.log('loadPendingInvitations: Raw Firebase data', invitationsSnapshot.docs.length, 'documents');
+      
+      const invitationsList = invitationsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        console.log('Invitation document:', doc.id, data);
+        
+        return {
+          id: doc.id,
+          ...data,
+          // Convert to staff-like format for display
+          fullName: `${data.firstName || ''} ${data.lastName || ''}`.trim(),
+          type: data.staffType || 'office',
+          status: 'pending',
+          isPendingInvitation: true
+        };
+      });
+
+      console.log('loadPendingInvitations: Processed invitations list', invitationsList);
+      setPendingInvitations(invitationsList);
+    } catch (err) {
+      console.error('Error loading pending invitations:', err);
+    }
+  }, [db, userId, tenantId]);
 
   const loadStaff = useCallback(async () => {
     if (!db || !userId || !tenantId) {
@@ -2907,6 +2981,8 @@ const Settings: React.FC = () => {
       console.log('loadStaff: Using cached data', cachedStaff);
       setOfficeStaff(cachedStaff.filter(staff => staff.type === 'office'));
       setTechnicians(cachedStaff.filter(staff => staff.type === 'technician'));
+      // Still load pending invitations as they're not cached
+      await loadPendingInvitations();
       return;
     }
 
@@ -2921,8 +2997,12 @@ const Settings: React.FC = () => {
       setError(null);
       
       console.log('loadStaff: Fetching from Firebase', { tenantId, userId });
-      const staffRef = collection(db, 'tenants', tenantId, 'staff');
-      const staffSnapshot = await getDocs(staffRef);
+      
+      // Load both staff and pending invitations
+      const [staffSnapshot] = await Promise.all([
+        getDocs(collection(db, 'tenants', tenantId, 'staff')),
+        loadPendingInvitations()
+      ]);
       
       console.log('loadStaff: Raw Firebase data', staffSnapshot.docs.length, 'documents');
       
@@ -2952,7 +3032,8 @@ const Settings: React.FC = () => {
           dateOfBirth: data.dateOfBirth || '',
           socialSecurityNumber: data.socialSecurityNumber || '',
           createdAt: data.createdAt || new Date().toISOString(),
-          updatedAt: data.updatedAt || new Date().toISOString()
+          updatedAt: data.updatedAt || new Date().toISOString(),
+          isPendingInvitation: false
         };
       }) as StaffMember[];
 
@@ -2979,7 +3060,7 @@ const Settings: React.FC = () => {
     } finally {
       cache.setLoading(cacheKey, false);
     }
-  }, [db, userId, tenantId, cache]);
+  }, [db, userId, tenantId, cache, loadPendingInvitations]);
 
   useEffect(() => {
     let isMounted = true;
@@ -3165,6 +3246,72 @@ const Settings: React.FC = () => {
     }
   };
 
+  const handleResendInvitation = async (invitationId: string) => {
+    if (!db || !tenantId) return;
+
+    try {
+      // Get the invitation data
+      const invitationDoc = await getDocs(
+        query(collection(db, 'tenants', tenantId, 'invitations'), where('__name__', '==', invitationId))
+      );
+      
+      if (invitationDoc.empty) {
+        setError('Invitation not found');
+        return;
+      }
+
+      const invitationData = invitationDoc.docs[0].data();
+      
+      // Generate new token and extend expiration
+      const newToken = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+      
+      const newExpiresAt = new Date();
+      newExpiresAt.setDate(newExpiresAt.getDate() + 7);
+
+      // Update invitation with new token
+      await updateDoc(doc(db, 'tenants', tenantId, 'invitations', invitationId), {
+        token: newToken,
+        expiresAt: newExpiresAt.toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      // Send new invitation email (you would integrate with your email service here)
+      const baseUrl = window.location.origin;
+      const link = `${baseUrl}/invite/${newToken}`;
+      
+      console.log('Resending invitation to:', invitationData.email);
+      console.log('New invitation link:', link);
+      
+      // Refresh the data
+      await loadStaff();
+      
+    } catch (err) {
+      console.error('Error resending invitation:', err);
+      setError('Failed to resend invitation. Please try again.');
+    }
+  };
+
+  const handleCancelInvitation = async (invitationId: string) => {
+    if (!db || !tenantId) return;
+
+    if (window.confirm('Are you sure you want to cancel this invitation?')) {
+      try {
+        await updateDoc(doc(db, 'tenants', tenantId, 'invitations', invitationId), {
+          status: 'cancelled',
+          updatedAt: new Date().toISOString()
+        });
+        
+        // Refresh the data
+        await loadStaff();
+      } catch (err) {
+        console.error('Error canceling invitation:', err);
+        setError('Failed to cancel invitation. Please try again.');
+      }
+    }
+  };
+
   const filteredSections = settingsSections.map(section => ({
       ...section,
       items: section.items.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -3280,37 +3427,39 @@ const Settings: React.FC = () => {
             {/* Debug Info */}
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
               <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-2">Debug Info</h4>
-              <div className="text-xs text-yellow-700 dark:text-yellow-300 space-y-1">
-                <div>User ID: {userId}</div>
-                <div>Tenant ID: {tenantId}</div>
-                <div>Office Staff Count: {officeStaff.length}</div>
-                <div>Loading: {isLoading ? 'Yes' : 'No'}</div>
-                <div>Error: {error || 'None'}</div>
-              </div>
+                             <div className="text-xs text-yellow-700 dark:text-yellow-300 space-y-1">
+                 <div>User ID: {userId}</div>
+                 <div>Tenant ID: {tenantId}</div>
+                 <div>Office Staff Count: {officeStaff.length}</div>
+                 <div>Pending Invitations: {pendingInvitations.filter(inv => inv.type === 'office').length}</div>
+                 <div>Loading: {isLoading ? 'Yes' : 'No'}</div>
+                 <div>Error: {error || 'None'}</div>
+               </div>
               <div className="mt-3 flex space-x-2">
-                <button
-                  onClick={() => {
-                    cache.remove(`staff_${tenantId}_${userId}`);
-                    loadStaff();
-                  }}
-                  className="px-3 py-1 bg-yellow-600 text-white text-xs rounded hover:bg-yellow-700"
-                >
-                  Clear Cache & Reload
-                </button>
-                <button
-                  onClick={() => {
-                    console.log('Current state:', { officeStaff, technicians, isLoading, error });
-                  }}
-                  className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                >
-                  Log State
-                </button>
+                                 <button
+                   onClick={() => {
+                     cache.remove(`staff_${tenantId}_${userId}`);
+                     loadStaff();
+                   }}
+                   className="px-3 py-1 bg-yellow-600 text-white text-xs rounded hover:bg-yellow-700"
+                 >
+                   Clear Cache & Reload
+                 </button>
+                 <button
+                   onClick={() => {
+                     console.log('Current state:', { officeStaff, technicians, pendingInvitations, isLoading, error });
+                   }}
+                   className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                 >
+                   Log State
+                 </button>
               </div>
             </div>
             
             <StaffList
               staffType="office"
               staff={officeStaff}
+              pendingInvitations={pendingInvitations}
               onEdit={handleEditOfficeStaff}
               onDelete={handleDeleteStaff}
               onSetEditingStaff={setEditingOfficeStaff}
@@ -3318,6 +3467,8 @@ const Settings: React.FC = () => {
               onCreateOwnerProfile={handleCreateOwnerProfile}
               creatingOwnerProfile={creatingOwnerProfile}
               currentUserId={userId}
+              onResendInvitation={handleResendInvitation}
+              onCancelInvitation={handleCancelInvitation}
             />
             {showOfficeStaffForm && (
               <StaffForm
@@ -3338,10 +3489,13 @@ const Settings: React.FC = () => {
             <StaffList
               staffType="technician"
               staff={technicians}
+              pendingInvitations={pendingInvitations}
               onEdit={handleEditTechnician}
               onDelete={handleDeleteStaff}
               onSetEditingStaff={setEditingTechnician}
               onInvite={handleInviteTechnician}
+              onResendInvitation={handleResendInvitation}
+              onCancelInvitation={handleCancelInvitation}
             />
             {showTechnicianForm && (
               <StaffForm
