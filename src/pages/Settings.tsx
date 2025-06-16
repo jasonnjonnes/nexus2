@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronDown, ChevronRight, Search, Plus, X, User, Mail, Phone, MapPin, Calendar, Shield, Building, Camera, Edit, Palette, Upload, Image, UserPlus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, Plus, X, User, Mail, Phone, MapPin, Calendar, Shield, Building, Camera, Edit, Palette, Upload, Image, UserPlus, Briefcase } from 'lucide-react';
 import { 
   Firestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, 
   query, where, setDoc, getDocs 
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import GLAccounts from '../components/GLAccounts';
 import StaffInvitationModal from '../components/StaffInvitationModal';
 import AuthMethodManager from '../components/AuthMethodManager';
@@ -13,6 +14,7 @@ import { useFirebaseAuth } from '../contexts/FirebaseAuthContext';
 import { useCache } from '../contexts/CacheContext';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { db } from '../firebase';
+import { createOwnerStaffProfile } from '../utils/createOwnerProfile';
 
 interface SettingItem {
   name: string;
@@ -56,6 +58,7 @@ const settingsSections: SettingSection[] = [
       { name: 'Content Portal', path: 'content-portal' },
       { name: 'Custom Fields', path: 'custom-fields' },
       { name: 'Custom Follow Up', path: 'custom-follow-up' },
+      { name: 'Inbound Jobs', path: 'inbound-jobs' },
       { name: 'Customer', path: 'customer' },
       { name: 'Dashboards', path: 'dashboards' },
       { name: 'Forms', path: 'forms' },
@@ -719,6 +722,9 @@ interface StaffListProps {
   onDelete: (staffId: string) => void;
   onSetEditingStaff: (staff: StaffMember | null) => void;
   onInvite: () => void;
+  onCreateOwnerProfile?: () => void;
+  creatingOwnerProfile?: boolean;
+  currentUserId?: string;
 }
 
 const StaffList: React.FC<StaffListProps> = ({
@@ -727,7 +733,10 @@ const StaffList: React.FC<StaffListProps> = ({
   onEdit,
   onDelete,
   onSetEditingStaff,
-  onInvite
+  onInvite,
+  onCreateOwnerProfile,
+  creatingOwnerProfile = false,
+  currentUserId
 }) => {
   type RoleColor = {
     [key: string]: string;
@@ -772,12 +781,30 @@ const StaffList: React.FC<StaffListProps> = ({
           <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
             Get started by adding your first {staffType === 'office' ? 'office staff member' : 'technician'}.
           </p>
-          <button
-            onClick={onInvite}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Add {staffType === 'office' ? 'Office Staff' : 'Technician'}
-          </button>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            {staffType === 'office' && onCreateOwnerProfile && (
+              <button
+                onClick={onCreateOwnerProfile}
+                disabled={creatingOwnerProfile}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center"
+              >
+                {creatingOwnerProfile ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                    Creating Profile...
+                  </>
+                ) : (
+                  'Create My Profile'
+                )}
+              </button>
+            )}
+            <button
+              onClick={onInvite}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Add {staffType === 'office' ? 'Office Staff' : 'Technician'}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -815,29 +842,37 @@ const StaffList: React.FC<StaffListProps> = ({
               {staff.map(member => (
                 <tr key={member.id} className="hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center text-white overflow-hidden">
-                        {member.profilePicture ? (
-                          <img 
-                            src={member.profilePicture} 
-                            alt={member.fullName} 
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <span className="text-sm font-medium">
-                            {member.firstName?.[0]}{member.lastName?.[0]}
-                          </span>
-                        )}
-                      </div>
-                      <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                          {member.fullName}
+                                          <div className="flex items-center">
+                        <div className="flex-shrink-0 h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center text-white overflow-hidden">
+                          {member.profilePicture ? (
+                            <img 
+                              src={member.profilePicture} 
+                              alt={member.fullName || 'Staff Member'} 
+                              className="h-full w-full object-cover"
+                              onError={(e) => {
+                                // Hide broken image and show initials instead
+                                e.currentTarget.style.display = 'none';
+                                const parent = e.currentTarget.parentElement;
+                                if (parent) {
+                                  parent.innerHTML = `<span class="text-sm font-medium">${(member.firstName?.[0] || '?')}${(member.lastName?.[0] || '?')}</span>`;
+                                }
+                              }}
+                            />
+                          ) : (
+                            <span className="text-sm font-medium">
+                              {(member.firstName?.[0] || '?')}{(member.lastName?.[0] || '?')}
+                            </span>
+                          )}
                         </div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">
-                          {member.email}
+                        <div className="ml-4">
+                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {member.fullName || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Unnamed Staff Member'}
+                          </div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                            {member.email || 'No email provided'}
+                          </div>
                         </div>
                       </div>
-                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleColor(member.role)}`}>
@@ -847,7 +882,7 @@ const StaffList: React.FC<StaffListProps> = ({
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
                     <div className="flex items-center">
                       <Phone size={14} className="mr-1" />
-                      {member.phone}
+                      {member.phone || 'No phone provided'}
                     </div>
                   </td>
                   {staffType === 'technician' && (
@@ -1588,6 +1623,477 @@ interface JobTypeFormData extends Omit<JobType, 'id' | 'userId'> {
   category: string;
   isActive: boolean;
 }
+
+// Inbound Jobs Configuration Management
+interface InboundJobField {
+  id: string;
+  name: string;
+  fieldType: 'text' | 'number' | 'date' | 'select';
+  isRequired: boolean;
+  businessUnits: string[]; // Business unit IDs this field applies to
+  jobTypes: string[]; // Job type IDs this field applies to
+  selectOptions?: string[]; // For select type fields
+  order: number;
+  userId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface InboundJobsManagementProps {
+  db: Firestore;
+  userId: string;
+  tenantId: string;
+}
+
+const InboundJobsManagement: React.FC<InboundJobsManagementProps> = ({ db, userId, tenantId }) => {
+  const [fields, setFields] = useState<InboundJobField[]>([]);
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+  const [jobTypes, setJobTypes] = useState<JobType[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingField, setEditingField] = useState<InboundJobField | null>(null);
+  const [formData, setFormData] = useState<Partial<InboundJobField>>({
+    name: '',
+    fieldType: 'text',
+    isRequired: false,
+    businessUnits: [],
+    jobTypes: [],
+    selectOptions: [],
+    order: 0
+  });
+
+  // Debug logging
+  console.log('InboundJobsManagement props:', { db: !!db, userId, tenantId });
+
+  // Load fields, business units, and job types
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setIsLoading(true);
+        console.log('Loading inbound job fields data...');
+
+        // Load inbound job fields
+        const fieldsQuery = query(
+          collection(db, 'tenants', tenantId, 'inboundJobFields'),
+          where('userId', '==', userId)
+        );
+        const fieldsSnapshot = await getDocs(fieldsQuery);
+        const fieldsData = fieldsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as InboundJobField[];
+        setFields(fieldsData.sort((a, b) => a.order - b.order));
+        console.log('Loaded fields:', fieldsData);
+
+        // Load business units
+        const businessUnitsQuery = query(
+          collection(db, 'tenants', tenantId, 'businessUnits'),
+          where('userId', '==', userId)
+        );
+        const businessUnitsSnapshot = await getDocs(businessUnitsQuery);
+        const businessUnitsData = businessUnitsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as BusinessUnit[];
+        setBusinessUnits(businessUnitsData);
+        console.log('Loaded business units:', businessUnitsData);
+        console.log('Business unit names:', businessUnitsData.map(bu => ({ id: bu.id, name: bu.name, officialName: bu.officialName })));
+
+        // Load job types
+        const jobTypesQuery = query(
+          collection(db, 'tenants', tenantId, 'jobTypes'),
+          where('userId', '==', userId)
+        );
+        const jobTypesSnapshot = await getDocs(jobTypesQuery);
+        const jobTypesData = jobTypesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as JobType[];
+        setJobTypes(jobTypesData);
+        console.log('Loaded job types:', jobTypesData);
+
+      } catch (error) {
+        console.error('Error loading inbound job fields data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (db && userId && tenantId) {
+      loadData();
+    } else {
+      console.warn('Missing required props:', { db: !!db, userId, tenantId });
+    }
+  }, [db, userId, tenantId]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate required fields
+    if (!formData.name?.trim()) {
+      alert('Field name is required');
+      return;
+    }
+    
+    try {
+      console.log('Saving inbound job field:', formData);
+      
+      const fieldData = {
+        ...formData,
+        userId,
+        updatedAt: new Date().toISOString(),
+        order: formData.order || fields.length
+      };
+
+      if (editingField) {
+        console.log('Updating existing field:', editingField.id);
+        await updateDoc(doc(db, 'tenants', tenantId, 'inboundJobFields', editingField.id), fieldData);
+        setFields(prev => prev.map(field => 
+          field.id === editingField.id 
+            ? { ...field, ...fieldData } as InboundJobField
+            : field
+        ));
+        console.log('Field updated successfully');
+      } else {
+        console.log('Creating new field');
+        const docRef = await addDoc(collection(db, 'tenants', tenantId, 'inboundJobFields'), {
+          ...fieldData,
+          createdAt: new Date().toISOString()
+        });
+        console.log('New field created with ID:', docRef.id);
+        
+        setFields(prev => [...prev, {
+          id: docRef.id,
+          ...fieldData,
+          createdAt: new Date().toISOString()
+        } as InboundJobField]);
+      }
+
+      setShowForm(false);
+      setEditingField(null);
+      setFormData({
+        name: '',
+        fieldType: 'text',
+        isRequired: false,
+        businessUnits: [],
+        jobTypes: [],
+        selectOptions: [],
+        order: 0
+      });
+      
+      console.log('Form reset and closed successfully');
+      
+      // Show success message
+      alert(editingField ? 'Field updated successfully!' : 'Field created successfully!');
+      
+    } catch (error) {
+      console.error('Error saving inbound job field:', error);
+      alert(`Failed to save field: ${error.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleEdit = (field: InboundJobField) => {
+    setEditingField(field);
+    setFormData(field);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (fieldId: string) => {
+    if (window.confirm('Are you sure you want to delete this field?')) {
+      try {
+        await deleteDoc(doc(db, 'tenants', tenantId, 'inboundJobFields', fieldId));
+        setFields(prev => prev.filter(field => field.id !== fieldId));
+      } catch (error) {
+        console.error('Error deleting inbound job field:', error);
+      }
+    }
+  };
+
+  const handleAdd = () => {
+    setEditingField(null);
+    setFormData({
+      name: '',
+      fieldType: 'text',
+      isRequired: false,
+      businessUnits: [],
+      jobTypes: [],
+      selectOptions: [],
+      order: fields.length
+    });
+    setShowForm(true);
+  };
+
+  const handleCancel = () => {
+    setShowForm(false);
+    setEditingField(null);
+    setFormData({
+      name: '',
+      fieldType: 'text',
+      isRequired: false,
+      businessUnits: [],
+      jobTypes: [],
+      selectOptions: [],
+      order: 0
+    });
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value, type } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
+    }));
+  };
+
+  const handleMultiSelectChange = (fieldName: 'businessUnits' | 'jobTypes', value: string) => {
+    setFormData(prev => {
+      const currentValues = prev[fieldName] || [];
+      const newValues = currentValues.includes(value)
+        ? currentValues.filter(v => v !== value)
+        : [...currentValues, value];
+      return { ...prev, [fieldName]: newValues };
+    });
+  };
+
+  const handleSelectOptionsChange = (options: string[]) => {
+    setFormData(prev => ({ ...prev, selectOptions: options }));
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Inbound Jobs Configuration</h2>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
+            Configure custom fields for inbound job creation
+          </p>
+        </div>
+        <button
+          onClick={handleAdd}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+        >
+          <Plus size={16} />
+          <span>Add Field</span>
+        </button>
+      </div>
+
+      {/* Fields List */}
+      <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700">
+        {fields.length === 0 ? (
+          <div className="p-8 text-center">
+            <Building size={48} className="mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Custom Fields</h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">
+              Create custom fields for inbound job creation
+            </p>
+            <button
+              onClick={handleAdd}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Add Your First Field
+            </button>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-200 dark:divide-slate-700">
+            {fields.map((field) => (
+              <div key={field.id} className="p-4 hover:bg-gray-50 dark:hover:bg-slate-700/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3">
+                      <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
+                        {field.name}
+                      </h3>
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        field.isRequired 
+                          ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                          : 'bg-gray-100 text-gray-800 dark:bg-slate-700 dark:text-gray-300'
+                      }`}>
+                        {field.isRequired ? 'Required' : 'Optional'}
+                      </span>
+                      <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded-full">
+                        {field.fieldType}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                      <div className="flex flex-wrap gap-4">
+                        {field.businessUnits.length > 0 && (
+                          <div>
+                            <span className="font-medium">Business Units: </span>
+                            {field.businessUnits.map(buId => {
+                              const bu = businessUnits.find(b => b.id === buId);
+                              return bu?.name || bu?.officialName;
+                            }).filter(Boolean).join(', ')}
+                          </div>
+                        )}
+                        {field.jobTypes.length > 0 && (
+                          <div>
+                            <span className="font-medium">Job Types: </span>
+                            {field.jobTypes.map(jtId => {
+                              const jt = jobTypes.find(j => j.id === jtId);
+                              return jt?.name;
+                            }).filter(Boolean).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handleEdit(field)}
+                      className="p-2 text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400"
+                    >
+                      <Edit size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(field.id)}
+                      className="p-2 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Form Modal */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+              {editingField ? 'Edit Field' : 'Add New Field'}
+            </h3>
+            
+            <form onSubmit={handleSave} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Field Name
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name || ''}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-gray-100"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Field Type
+                </label>
+                <select
+                  name="fieldType"
+                  value={formData.fieldType || 'text'}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-gray-100"
+                >
+                  <option value="text">Text</option>
+                  <option value="number">Number</option>
+                  <option value="date">Date</option>
+                  <option value="select">Select</option>
+                </select>
+              </div>
+
+              {formData.fieldType === 'select' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Select Options (one per line)
+                  </label>
+                  <textarea
+                    value={(formData.selectOptions || []).join('\n')}
+                    onChange={(e) => handleSelectOptionsChange(e.target.value.split('\n').filter(Boolean))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-gray-100"
+                    rows={4}
+                    placeholder="Option 1&#10;Option 2&#10;Option 3"
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  name="isRequired"
+                  checked={formData.isRequired || false}
+                  onChange={handleInputChange}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                  Required Field
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Business Units (leave empty for all)
+                </label>
+                <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+                  {businessUnits.map(bu => (
+                    <label key={bu.id} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={(formData.businessUnits || []).includes(bu.id)}
+                        onChange={() => handleMultiSelectChange('businessUnits', bu.id)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">{bu.name || bu.officialName}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Job Types (leave empty for all)
+                </label>
+                <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+                  {jobTypes.map(jt => (
+                    <label key={jt.id} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={(formData.jobTypes || []).includes(jt.id)}
+                        onChange={() => handleMultiSelectChange('jobTypes', jt.id)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">{jt.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  {editingField ? 'Update' : 'Create'} Field
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const JobTypesManagement: React.FC<JobTypesManagementProps> = ({ db, userId, tenantId }) => {
   const [jobTypes, setJobTypes] = useState<JobType[]>([]);
@@ -2385,15 +2891,20 @@ const Settings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
   const [technicians, setTechnicians] = useState<StaffMember[]>([]);
+  const [creatingOwnerProfile, setCreatingOwnerProfile] = useState(false);
 
   const loadStaff = useCallback(async () => {
-    if (!db || !userId || !tenantId) return;
+    if (!db || !userId || !tenantId) {
+      console.log('loadStaff: Missing required data', { db: !!db, userId, tenantId });
+      return;
+    }
 
     const cacheKey = `staff_${tenantId}_${userId}`;
     
     // Try to get from cache first
     const cachedStaff = cache.get<StaffMember[]>(cacheKey);
     if (cachedStaff) {
+      console.log('loadStaff: Using cached data', cachedStaff);
       setOfficeStaff(cachedStaff.filter(staff => staff.type === 'office'));
       setTechnicians(cachedStaff.filter(staff => staff.type === 'technician'));
       return;
@@ -2401,6 +2912,7 @@ const Settings: React.FC = () => {
 
     // Check if already loading to prevent duplicate requests
     if (cache.isLoading(cacheKey)) {
+      console.log('loadStaff: Already loading, skipping');
       return;
     }
 
@@ -2408,18 +2920,57 @@ const Settings: React.FC = () => {
       cache.setLoading(cacheKey, true);
       setError(null);
       
+      console.log('loadStaff: Fetching from Firebase', { tenantId, userId });
       const staffRef = collection(db, 'tenants', tenantId, 'staff');
       const staffSnapshot = await getDocs(staffRef);
-      const staffList = staffSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as StaffMember[];
+      
+      console.log('loadStaff: Raw Firebase data', staffSnapshot.docs.length, 'documents');
+      
+      const staffList = staffSnapshot.docs.map(doc => {
+        const data = doc.data();
+        console.log('Staff document:', doc.id, data);
+        
+        // Ensure fullName is set if missing
+        const fullName = data.fullName || `${data.firstName || ''} ${data.lastName || ''}`.trim();
+        
+        return {
+          id: doc.id,
+          ...data,
+          fullName,
+          // Ensure required fields have defaults
+          firstName: data.firstName || '',
+          lastName: data.lastName || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          role: data.role || 'Staff',
+          type: data.type || data.staffType || 'office', // Handle legacy staffType field
+          status: data.status || 'active',
+          profilePicture: data.profilePicture || '',
+          color: data.color || '#3B82F6',
+          businessUnit: data.businessUnit || '',
+          homeAddress: data.homeAddress || '',
+          dateOfBirth: data.dateOfBirth || '',
+          socialSecurityNumber: data.socialSecurityNumber || '',
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt || new Date().toISOString()
+        };
+      }) as StaffMember[];
+
+      console.log('loadStaff: Processed staff list', staffList);
 
       // Cache the staff data for 1 hour
       cache.set(cacheKey, staffList, 60);
       
-      setOfficeStaff(staffList.filter(staff => staff.type === 'office'));
-      setTechnicians(staffList.filter(staff => staff.type === 'technician'));
+      const officeStaffList = staffList.filter(staff => staff.type === 'office');
+      const techniciansList = staffList.filter(staff => staff.type === 'technician');
+      
+      console.log('loadStaff: Filtered results', { 
+        office: officeStaffList.length, 
+        technicians: techniciansList.length 
+      });
+      
+      setOfficeStaff(officeStaffList);
+      setTechnicians(techniciansList);
     } catch (err) {
       console.error('Error loading staff:', err);
       setError('Failed to load staff members. Please try again.');
@@ -2590,6 +3141,30 @@ const Settings: React.FC = () => {
     setShowInviteModal(true);
   };
 
+  const handleCreateOwnerProfile = async () => {
+    if (!userId || !tenantId) return;
+
+    setCreatingOwnerProfile(true);
+    setError(null);
+
+    try {
+      const result = await createOwnerStaffProfile();
+      if (result.success) {
+        // Clear cache and refresh staff list
+        cache.remove(`staff_${tenantId}_${userId}`);
+        await loadStaff();
+        setError(null);
+      } else {
+        setError(result.message || 'Failed to create owner profile');
+      }
+    } catch (err: any) {
+      console.error('Error creating owner profile:', err);
+      setError('Failed to create owner profile. Please try again.');
+    } finally {
+      setCreatingOwnerProfile(false);
+    }
+  };
+
   const filteredSections = settingsSections.map(section => ({
       ...section,
       items: section.items.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -2696,9 +3271,43 @@ const Settings: React.FC = () => {
           {selectedItem === 'job-types' && db && userId && tenantId && (
                            <JobTypesManagement db={db} userId={userId} tenantId={tenantId} />
           )}
+          {selectedItem === 'inbound-jobs' && db && userId && tenantId && (
+                           <InboundJobsManagement db={db} userId={userId} tenantId={tenantId} />
+          )}
         
         {selectedItem === 'office' && db && userId && (
           <div className="space-y-6">
+            {/* Debug Info */}
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-2">Debug Info</h4>
+              <div className="text-xs text-yellow-700 dark:text-yellow-300 space-y-1">
+                <div>User ID: {userId}</div>
+                <div>Tenant ID: {tenantId}</div>
+                <div>Office Staff Count: {officeStaff.length}</div>
+                <div>Loading: {isLoading ? 'Yes' : 'No'}</div>
+                <div>Error: {error || 'None'}</div>
+              </div>
+              <div className="mt-3 flex space-x-2">
+                <button
+                  onClick={() => {
+                    cache.remove(`staff_${tenantId}_${userId}`);
+                    loadStaff();
+                  }}
+                  className="px-3 py-1 bg-yellow-600 text-white text-xs rounded hover:bg-yellow-700"
+                >
+                  Clear Cache & Reload
+                </button>
+                <button
+                  onClick={() => {
+                    console.log('Current state:', { officeStaff, technicians, isLoading, error });
+                  }}
+                  className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                >
+                  Log State
+                </button>
+              </div>
+            </div>
+            
             <StaffList
               staffType="office"
               staff={officeStaff}
@@ -2706,6 +3315,9 @@ const Settings: React.FC = () => {
               onDelete={handleDeleteStaff}
               onSetEditingStaff={setEditingOfficeStaff}
               onInvite={handleInviteOfficeStaff}
+              onCreateOwnerProfile={handleCreateOwnerProfile}
+              creatingOwnerProfile={creatingOwnerProfile}
+              currentUserId={userId}
             />
             {showOfficeStaffForm && (
               <StaffForm
